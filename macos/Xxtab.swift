@@ -161,6 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         timer = Timer(timeInterval: 1, target: self, selector: #selector(poll), userInfo: nil, repeats: true)
         RunLoop.main.add(timer!, forMode: .common)
         RunLoop.main.add(timer!, forMode: .modalPanel)
+        startUpdate(automatic: true)
     }
     func reloadProfiles() throws {
         catalog = try JSONDecoder().decode(Catalog.self, from: bridge("list"))
@@ -244,9 +245,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     @objc func clearLog() { clearAfter = lastSequence; log.string = ""; lastLog = "" }
     @objc func checkUpdate() { startUpdate() }
-    func startUpdate(version: String? = nil) {
+    func startUpdate(version: String? = nil, automatic: Bool = false) {
         guard updater == nil && !closing else { return }
-        action {
+        do {
             let task = Process(); task.executableURL = helper
             task.arguments = version.map { ["update", "download", $0] } ?? ["update", "check"]
             let output = Pipe(); let errors = Pipe()
@@ -254,20 +255,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             task.terminationHandler = { [weak self] task in
                 let data = output.fileHandleForReading.readDataToEndOfFile()
                 let error = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "更新失败"
-                DispatchQueue.main.async { self?.updateEnded(task.terminationStatus, data: data, error: error, downloading: version != nil) }
+                DispatchQueue.main.async { self?.updateEnded(task.terminationStatus, data: data, error: error, downloading: version != nil, automatic: automatic) }
             }
             updater = task; updateItem.title = version == nil ? "正在检查更新…" : "正在下载并校验…"; updateControls()
             do { try task.run() }
             catch { updater = nil; updateItem.title = "检查更新…"; updateControls(); throw error }
-        }
+        } catch { updateFailed(error, automatic: automatic) }
     }
-    func updateEnded(_ code: Int32, data: Data, error: String, downloading: Bool) {
+    func updateFailed(_ error: Error, automatic: Bool) {
+        if automatic {
+            log.string += "\n自动检查更新失败：" + String(error.localizedDescription.prefix(2048))
+            log.scrollToEndOfDocument(nil)
+        } else { action { throw error } }
+    }
+    func updateEnded(_ code: Int32, data: Data, error: String, downloading: Bool, automatic: Bool = false) {
         updater = nil; updateItem.title = "检查更新…"; updateControls()
         guard !closing else { return }
-        action {
+        do {
             guard code == 0 else { throw AppError.message(String(error.prefix(2048))) }
-            let alert = NSAlert(); NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
             if downloading {
+                NSApp.activate(ignoringOtherApps: true)
                 let download = try JSONDecoder().decode(UpdateDownload.self, from: data)
                 alert.messageText = "更新 \(download.version) 已下载并通过 SHA256 校验"
                 alert.informativeText = "是否断开连接并退出，打开更新安装包？\n打开后将 xxtab 拖到 Applications 替换旧版本。已有配置会保留。\n\n安装包：\(download.path)"
@@ -277,17 +285,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             } else {
                 let result = try JSONDecoder().decode(UpdateCheck.self, from: data)
+                if automatic && !result.available { return }
+                NSApp.activate(ignoringOtherApps: true)
                 if result.available, let release = result.release {
                     alert.messageText = "发现新版本 \(release.version)"
-                    alert.informativeText = "当前版本：\(result.current)\n从 GitHub Releases 下载此 Mac 架构的安装包？"
+                    alert.informativeText = "当前版本：\(result.current)\n是否下载此 Mac 架构的安装包？"
                     alert.addButton(withTitle: "下载更新"); alert.addButton(withTitle: "取消")
                     if alert.runModal() == .alertFirstButtonReturn { startUpdate(version: release.version) }
                 } else {
-                    alert.messageText = result.release == nil ? "GitHub 尚未发布正式版本" : "没有更新的正式版本"
+                    alert.messageText = result.release == nil ? "尚未发布正式版本" : "没有更新的正式版本"
                     alert.informativeText = "当前版本：\(result.current)"; alert.runModal()
                 }
             }
-        }
+        } catch { updateFailed(error, automatic: automatic) }
     }
     @objc func connect() {
         guard process == nil && !closing && editor == nil else { return }
@@ -397,6 +407,10 @@ struct XxtabApp {
                 delegate.openEditor(draft, index: nil, readOnly: true)
                 precondition(delegate.wgField.isEditable == false)
                 delegate.editor?.close()
+                // Startup with no update or unavailable GitHub must not open a modal dialog.
+                delegate.updateEnded(0, data: Data(#"{"current":"0.1.3","available":false,"release":null}"#.utf8), error: "", downloading: false, automatic: true)
+                delegate.updateEnded(1, data: Data(), error: "synthetic offline error", downloading: false, automatic: true)
+                precondition(delegate.log.string.contains("synthetic offline error"))
                 print("PASS: native AppKit controls, profile bridge, templates, read-only viewer")
                 return
             } catch { fputs("macOS smoke test failed: \(error.localizedDescription)\n", stderr); exit(1) }

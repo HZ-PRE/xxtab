@@ -322,6 +322,7 @@ struct Ui {
     feed: Arc<Mutex<Feed>>,
     worker: Option<Worker>,
     updater: Option<JoinHandle<Result<UpdateResult>>>,
+    automatic_update: bool,
     pending_install: Option<xxtab::update::Download>,
     history: VecDeque<String>,
     status_value: Status,
@@ -398,6 +399,7 @@ impl Ui {
             feed,
             worker: None,
             updater: None,
+            automatic_update: false,
             pending_install: None,
             history: VecDeque::new(),
             status_value: Status::Idle,
@@ -773,14 +775,18 @@ impl Ui {
             self.paint_log();
         }
     }
-    unsafe fn start_update(&mut self, release: Option<xxtab::update::Release>) -> Result<()> {
+    unsafe fn start_update(
+        &mut self,
+        release: Option<xxtab::update::Release>,
+        automatic: bool,
+    ) -> Result<()> {
         if self.updater.is_some() || self.closing {
             return Ok(());
         }
         self.append(if release.is_some() {
-            "正在从 GitHub 下载更新并校验 SHA256…"
+            "正在下载更新并校验 SHA256…"
         } else {
-            "正在检查 GitHub Releases…"
+            "正在检查更新…"
         });
         self.paint_log();
         self.updater = Some(
@@ -801,6 +807,7 @@ impl Ui {
                     })
                 })?,
         );
+        self.automatic_update = automatic;
         self.buttons();
         Ok(())
     }
@@ -827,13 +834,14 @@ impl Ui {
             .join()
             .unwrap_or_else(|_| Err(anyhow::anyhow!("更新线程异常结束")));
         self.buttons();
+        let automatic = self.automatic_update;
         let result = (|| -> Result<()> {
             match result? {
                 UpdateResult::Checked(check) => {
                     if check.available {
                         let release = check.release.context("缺少更新信息")?;
                         let message = format!(
-                            "当前版本：{}\n新版本：{}\n\n从 GitHub Releases 下载更新？\n下载完成后将再次询问是否安装。",
+                            "当前版本：{}\n新版本：{}\n\n是否下载更新？\n下载完成后将再次询问是否安装。",
                             check.current, release.version
                         );
                         if MessageBoxW(
@@ -843,11 +851,11 @@ impl Ui {
                             MB_YESNO | MB_ICONINFORMATION,
                         ) == IDYES
                         {
-                            self.start_update(Some(release))?;
+                            self.start_update(Some(release), false)?;
                         }
-                    } else {
+                    } else if !automatic {
                         let message = if check.release.is_none() {
-                            format!("当前版本：{}\nGitHub 尚未发布正式版本。", check.current)
+                            format!("当前版本：{}\n尚未发布正式版本。", check.current)
                         } else {
                             format!("当前版本：{}\n没有更新的正式版本。", check.current)
                         };
@@ -878,7 +886,9 @@ impl Ui {
         if let Err(problem) = result {
             self.append(&format!("更新失败：{problem:#}"));
             self.paint_log();
-            error(self.hwnd, format!("更新失败：{problem:#}"));
+            if !automatic {
+                error(self.hwnd, format!("更新失败：{problem:#}"));
+            }
         }
     }
     unsafe fn command(&mut self, id: usize) -> Result<()> {
@@ -889,7 +899,7 @@ impl Ui {
             return Ok(());
         }
         match id {
-            UPDATE => self.start_update(None)?,
+            UPDATE => self.start_update(None, false)?,
             CONNECT => self.start()?,
             DISCONNECT => self.stop(false),
             RECONNECT => self.stop(true),
@@ -1460,6 +1470,14 @@ unsafe fn run_inner() -> Result<()> {
     let hwnd = create_main(store, feed)?;
     SetTimer(hwnd, 1, 250, None);
     ShowWindow(hwnd, SW_SHOW);
+    UI.with(|slot| {
+        if let Some(ui) = slot.borrow_mut().as_mut()
+            && let Err(problem) = ui.start_update(None, true)
+        {
+            ui.append(&format!("自动检查更新失败：{problem:#}"));
+            ui.paint_log();
+        }
+    });
     let mut msg: MSG = std::mem::zeroed();
     while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
         let editor = EDITOR.with(|slot| slot.borrow().as_ref().map(|e| e.hwnd));
@@ -1581,6 +1599,99 @@ mod tests {
             ..Default::default()
         };
         Shell_NotifyIconGetRect(&identity, &mut RECT::default()) >= 0
+    }
+
+    thread_local! {
+        static UPDATE_DIALOGS: Cell<usize> = const { Cell::new(0) };
+    }
+    unsafe extern "system" fn dismiss_update_dialog(window: HWND, owner: LPARAM) -> i32 {
+        let mut class = [0u16; 32];
+        let length = GetClassNameW(window, class.as_mut_ptr(), class.len() as i32);
+        if GetWindow(window, GW_OWNER) == owner as HWND
+            && String::from_utf16_lossy(&class[..length as usize]) == "#32770"
+        {
+            UPDATE_DIALOGS.with(|count| count.set(count.get() + 1));
+            EndDialog(window, IDNO as isize);
+        }
+        1
+    }
+    unsafe extern "system" fn dismiss_update_timer(hwnd: HWND, _: u32, _: usize, _: u32) {
+        EnumThreadWindows(
+            windows_sys::Win32::System::Threading::GetCurrentThreadId(),
+            Some(dismiss_update_dialog),
+            hwnd as LPARAM,
+        );
+    }
+
+    #[test]
+    #[ignore = "native Windows update dialogs; uses synthetic releases, no network or tunnel"]
+    fn startup_update_dialogs_and_quiet_failures() {
+        unsafe {
+            let temp = tempfile::tempdir().unwrap();
+            let hwnd = create_main(
+                Store::open(temp.path().join("profiles")).unwrap(),
+                Arc::new(Mutex::new(Feed::default())),
+            )
+            .unwrap();
+            let release = xxtab::update::Release {
+                version: "99.0.0".into(),
+                page: String::new(),
+                filename: String::new(),
+                url: String::new(),
+                checksum_url: String::new(),
+                size: 1,
+            };
+            for (automatic, result, expected) in [
+                (
+                    true,
+                    Ok(UpdateResult::Checked(xxtab::update::Check {
+                        current: "0.1.3".into(),
+                        available: false,
+                        release: None,
+                    })),
+                    0,
+                ),
+                (true, Err(anyhow::anyhow!("synthetic offline error")), 0),
+                (
+                    false,
+                    Ok(UpdateResult::Checked(xxtab::update::Check {
+                        current: "0.1.3".into(),
+                        available: false,
+                        release: None,
+                    })),
+                    1,
+                ),
+                (
+                    true,
+                    Ok(UpdateResult::Checked(xxtab::update::Check {
+                        current: "0.1.3".into(),
+                        available: true,
+                        release: Some(release),
+                    })),
+                    1,
+                ),
+            ] {
+                UPDATE_DIALOGS.with(|count| count.set(0));
+                let thread = std::thread::spawn(move || result);
+                while !thread.is_finished() {
+                    std::thread::yield_now();
+                }
+                assert_ne!(SetTimer(hwnd, 78, 25, Some(dismiss_update_timer)), 0);
+                UI.with(|slot| {
+                    let mut slot = slot.borrow_mut();
+                    let ui = slot.as_mut().unwrap();
+                    ui.automatic_update = automatic;
+                    ui.updater = Some(thread);
+                    ui.update_tick();
+                    assert!(ui.updater.is_none());
+                    assert!(ui.worker.is_none());
+                });
+                KillTimer(hwnd, 78);
+                assert_eq!(UPDATE_DIALOGS.with(Cell::get), expected);
+            }
+            UI.with(|slot| slot.borrow_mut().take());
+            DestroyWindow(hwnd);
+        }
     }
     // Capture this test's own native window into a bitmap; no desktop or other apps are read.
     unsafe fn capture(hwnd: HWND, path: &Path) {

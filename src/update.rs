@@ -1,16 +1,47 @@
-//! On-demand GitHub Releases updates. No resident polling or GitHub credentials.
+//! Startup and on-demand GitHub Releases updates. No resident polling or GitHub credentials.
 use anyhow::{Context, Result, bail, ensure};
+#[cfg(not(windows))]
 use http_body_util::BodyExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{io::Write, path::PathBuf, sync::Arc, time::Duration};
-use tokio::{net::TcpStream, time::timeout};
+#[cfg(not(windows))]
+use std::sync::Arc;
+use std::{io::Write, path::PathBuf, time::Duration};
+#[cfg(not(windows))]
+use tokio::net::TcpStream;
+use tokio::time::timeout;
 use url::Url;
 
 pub const REPOSITORY: &str = "HZ-PRE/xxtab";
 pub const RELEASES: &str = "https://github.com/HZ-PRE/xxtab/releases";
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const MAX_PACKAGE: u64 = 256 * 1024 * 1024;
+
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(windows)]
+mod windows;
+
+/// One background check for CLI run/relay. Diagnostics stay off JSON stdout.
+pub async fn startup_notice() {
+    match check().await {
+        Ok(check) if check.available => {
+            if let Some(release) = check.release {
+                let message = format!(
+                    "发现 xxtab 新版本 {}（当前 {}）\n下载并校验：xxtab update download {}\n停止连接后解压替换程序。\n{}",
+                    release.version, check.current, release.version, release.page
+                );
+                crate::log!("{message}");
+                #[cfg(target_os = "linux")]
+                if let Err(error) = linux::notify(&message).await {
+                    crate::log!("无法显示更新弹窗，请查看终端提示：{error:#}");
+                }
+            }
+        }
+        Ok(_) => {}
+        Err(error) => crate::log!("自动检查更新失败：{error:#}"),
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Release {
@@ -141,7 +172,9 @@ fn trusted_url(value: &str) -> Result<Url> {
     Ok(url)
 }
 
+#[cfg(not(windows))]
 struct Connection(tokio::task::JoinHandle<()>);
+#[cfg(not(windows))]
 impl Drop for Connection {
     fn drop(&mut self) {
         self.0.abort();
@@ -149,6 +182,12 @@ impl Drop for Connection {
 }
 
 // The body is streamed into the writer: even a large installer uses bounded memory.
+#[cfg(windows)]
+async fn fetch(value: &str, limit: u64, writer: &mut impl Write) -> Result<u16> {
+    windows::fetch(value, limit, writer).await
+}
+
+#[cfg(not(windows))]
 async fn fetch(value: &str, limit: u64, writer: &mut impl Write) -> Result<u16> {
     let roots = rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let tls = Arc::new(

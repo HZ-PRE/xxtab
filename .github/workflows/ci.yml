@@ -46,6 +46,8 @@ jobs:
       - run: cargo test --locked --features windows-gui --all-targets
       - name: Verify updater handoff without installing software
         run: cargo test --locked --lib update::tests::windows_installer_handoff_waits_and_rechecks -- --ignored
+      - name: Verify startup update dialogs without network or tunnels
+        run: cargo test --locked --features windows-gui --bin xxtab-gui startup_update_dialogs_and_quiet_failures -- --ignored
       - run: cargo clippy --locked --features windows-gui --all-targets -- -D warnings
       - name: Install packaging compiler
         shell: pwsh

@@ -91,5 +91,16 @@ async fn execute() -> Result<()> {
     if args.len() != 2 || !matches!(args[0].as_str(), "check" | "run" | "relay") {
         bail!("usage: xxtab <check|run|relay> <config.toml>");
     }
-    xxtab::app::run(Path::new(&args[1]), &args[0], shutdown()).await
+    if args[0] == "check" {
+        return xxtab::app::run(Path::new(&args[1]), &args[0], shutdown()).await;
+    }
+    // Check once alongside the tunnel. Dropping this future cancels the check/dialog
+    // immediately on shutdown; helper commands and offline validation never check.
+    tokio::select! {
+        result = xxtab::app::run(Path::new(&args[1]), &args[0], shutdown()) => result,
+        () = async {
+            xxtab::update::startup_notice().await;
+            std::future::pending::<()>().await;
+        } => unreachable!(),
+    }
 }

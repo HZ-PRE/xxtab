@@ -11,6 +11,9 @@ struct Draft: Codable {
 struct Profile: Decodable { let name: String; let id: String }
 struct Catalog: Decodable { let profiles: [Profile]; let selected: Int }
 struct Snapshot: Decodable { let status: String; let lines: [String]; let sequence: UInt64; let finished: Bool }
+struct UpdateRelease: Decodable { let version: String }
+struct UpdateCheck: Decodable { let current: String; let available: Bool; let release: UpdateRelease? }
+struct UpdateDownload: Decodable { let version: String; let path: String; let sha256: String }
 enum AppError: LocalizedError {
     case message(String)
     var errorDescription: String? { if case let .message(value) = self { return value }; return nil }
@@ -65,6 +68,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var nameField: NSTextField!
     var tunnelField: NSTextView!
     var wgField: NSTextView!
+    var updater: Process?
+    var updateItem: NSMenuItem!
+    var pendingUpdate: URL?
 
     init(root: URL? = nil) {
         self.root = root ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/xxtab/profiles")
@@ -141,6 +147,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(.separator()); let quit = NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q"); quit.target = self; menu.addItem(quit)
         statusItem.menu = menu
         let main = NSMenu(); let app = NSMenuItem(); main.addItem(app); let appMenu = NSMenu(); app.submenu = appMenu
+        updateItem = NSMenuItem(title: "检查更新…", action: #selector(checkUpdate), keyEquivalent: "")
+        updateItem.target = self; appMenu.autoenablesItems = false; appMenu.addItem(updateItem); appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "退出 xxtab", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let edit = NSMenuItem(); main.addItem(edit); let editMenu = NSMenu(title: "编辑"); edit.submenu = editMenu
         for (title, selector, key) in [("撤销", "undo:", "z"), ("剪切", "cut:", "x"), ("复制", "copy:", "c"), ("粘贴", "paste:", "v"), ("全选", "selectAll:", "a")] {
@@ -165,6 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return try JSONDecoder().decode(Draft.self, from: bridge("load", ["index": profiles.indexOfSelectedItem]))
     }
     func updateControls() {
+        updateItem?.isEnabled = updater == nil && !closing
         let busy = process != nil; let selected = profiles.indexOfSelectedItem >= 0; let modal = editor != nil
         profiles.isEnabled = !busy && !modal
         let states = [!busy && selected && !closing && !modal, busy && !stopping && !modal, busy && !stopping && !modal]
@@ -234,6 +243,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     @objc func clearLog() { clearAfter = lastSequence; log.string = ""; lastLog = "" }
+    @objc func checkUpdate() { startUpdate() }
+    func startUpdate(version: String? = nil) {
+        guard updater == nil && !closing else { return }
+        action {
+            let task = Process(); task.executableURL = helper
+            task.arguments = version.map { ["update", "download", $0] } ?? ["update", "check"]
+            let output = Pipe(); let errors = Pipe()
+            task.standardOutput = output; task.standardError = errors; task.standardInput = FileHandle.nullDevice
+            task.terminationHandler = { [weak self] task in
+                let data = output.fileHandleForReading.readDataToEndOfFile()
+                let error = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "更新失败"
+                DispatchQueue.main.async { self?.updateEnded(task.terminationStatus, data: data, error: error, downloading: version != nil) }
+            }
+            updater = task; updateItem.title = version == nil ? "正在检查更新…" : "正在下载并校验…"; updateControls()
+            do { try task.run() }
+            catch { updater = nil; updateItem.title = "检查更新…"; updateControls(); throw error }
+        }
+    }
+    func updateEnded(_ code: Int32, data: Data, error: String, downloading: Bool) {
+        updater = nil; updateItem.title = "检查更新…"; updateControls()
+        guard !closing else { return }
+        action {
+            guard code == 0 else { throw AppError.message(String(error.prefix(2048))) }
+            let alert = NSAlert(); NSApp.activate(ignoringOtherApps: true)
+            if downloading {
+                let download = try JSONDecoder().decode(UpdateDownload.self, from: data)
+                alert.messageText = "更新 \(download.version) 已下载并通过 SHA256 校验"
+                alert.informativeText = "是否断开连接并退出，打开更新安装包？\n打开后将 xxtab 拖到 Applications 替换旧版本。已有配置会保留。\n\n安装包：\(download.path)"
+                alert.addButton(withTitle: "退出并打开安装包"); alert.addButton(withTitle: "稍后安装")
+                if alert.runModal() == .alertFirstButtonReturn {
+                    pendingUpdate = URL(fileURLWithPath: download.path); NSApp.terminate(nil)
+                }
+            } else {
+                let result = try JSONDecoder().decode(UpdateCheck.self, from: data)
+                if result.available, let release = result.release {
+                    alert.messageText = "发现新版本 \(release.version)"
+                    alert.informativeText = "当前版本：\(result.current)\n从 GitHub Releases 下载此 Mac 架构的安装包？"
+                    alert.addButton(withTitle: "下载更新"); alert.addButton(withTitle: "取消")
+                    if alert.runModal() == .alertFirstButtonReturn { startUpdate(version: release.version) }
+                } else {
+                    alert.messageText = result.release == nil ? "GitHub 尚未发布正式版本" : "没有更新的正式版本"
+                    alert.informativeText = "当前版本：\(result.current)"; alert.runModal()
+                }
+            }
+        }
+    }
     @objc func connect() {
         guard process == nil && !closing && editor == nil else { return }
         action {
@@ -295,17 +350,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if code != 0 { status.stringValue = "连接未完成或授权已取消"; log.string += "\n" + String(error.prefix(2048)) }
         else { status.stringValue = "未连接" }
         updateControls()
-        if closing { NSApp.reply(toApplicationShouldTerminate: true); return }
+        if closing {
+            if pendingUpdate != nil && code != 0 {
+                pendingUpdate = nil; closing = false; updateControls()
+                NSApp.reply(toApplicationShouldTerminate: false)
+                action { throw AppError.message("连接清理未成功，已取消更新安装，请查看日志。") }
+            } else { NSApp.reply(toApplicationShouldTerminate: true) }
+            return
+        }
         let retry = restarting && code == 0; restarting = false
         if retry { connect() }
     }
     @objc func quitApp() { NSApp.terminate(nil) }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if let editor = editor, !windowShouldClose(editor) { return .terminateCancel }
+        if let editor = editor, !windowShouldClose(editor) { pendingUpdate = nil; return .terminateCancel }
         if process != nil { closing = true; stop(restart: false); return .terminateLater }
         return .terminateNow
     }
-    func applicationWillTerminate(_ notification: Notification) { timer?.invalidate(); if let item = statusItem { NSStatusBar.system.removeStatusItem(item) } }
+    func applicationWillTerminate(_ notification: Notification) {
+        timer?.invalidate(); updater?.terminate()
+        if let item = statusItem { NSStatusBar.system.removeStatusItem(item) }
+        if let package = pendingUpdate { NSWorkspace.shared.open(package) }
+    }
 }
 
 @main

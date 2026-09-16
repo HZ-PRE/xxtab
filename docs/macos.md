@@ -47,8 +47,8 @@ bash tools/build-macos.sh
 脚本按运行机器架构编译 Rust 和 AppKit，生成图标、签名、运行原生界面烟雾测试，再生成：
 
 ```text
-dist/installers/xxtab-0.1.1-macos-arm64.dmg
-dist/installers/xxtab-0.1.1-macos-arm64.app.zip
+dist/installers/xxtab-0.1.2-macos-arm64.dmg
+dist/installers/xxtab-0.1.2-macos-arm64.app.zip
 # Intel 对应 x86_64；旁边有各自 .sha256。
 ```
 

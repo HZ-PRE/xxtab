@@ -42,6 +42,7 @@ const CLEAR: usize = 107;
 const EXIT: usize = 108;
 const ABOUT: usize = 109;
 const VIEW: usize = 110;
+const UPDATE: usize = 111;
 const SAVE: usize = 205;
 const CANCEL: usize = 206;
 const IMPORT_WG: usize = 207;
@@ -294,6 +295,10 @@ struct Worker {
     cancel: Option<tokio::sync::oneshot::Sender<()>>,
     thread: JoinHandle<Result<()>>,
 }
+enum UpdateResult {
+    Checked(xxtab::update::Check),
+    Downloaded(xxtab::update::Download),
+}
 struct Ui {
     hwnd: HWND,
     tray: Tray,
@@ -316,6 +321,8 @@ struct Ui {
     store: Store,
     feed: Arc<Mutex<Feed>>,
     worker: Option<Worker>,
+    updater: Option<JoinHandle<Result<UpdateResult>>>,
+    pending_install: Option<xxtab::update::Download>,
     history: VecDeque<String>,
     status_value: Status,
     connected_at: Option<Instant>,
@@ -390,6 +397,8 @@ impl Ui {
             store,
             feed,
             worker: None,
+            updater: None,
+            pending_install: None,
             history: VecDeque::new(),
             status_value: Status::Idle,
             connected_at: None,
@@ -504,6 +513,16 @@ impl Ui {
             self.connection_action_enabled(RECONNECT) as i32,
         );
         let menu = GetMenu(self.hwnd);
+        EnableMenuItem(
+            menu,
+            UPDATE as u32,
+            MF_BYCOMMAND
+                | if self.updater.is_some() || self.closing {
+                    MF_GRAYED
+                } else {
+                    MF_ENABLED
+                },
+        );
         EnableMenuItem(
             menu,
             VIEW as u32,
@@ -642,6 +661,7 @@ impl Ui {
         }
     }
     unsafe fn tick(&mut self) {
+        self.update_tick();
         // A broadcast can arrive inside a modal command's nested message loop.
         if TRAY_RECREATE_PENDING.with(|pending| pending.replace(false)) {
             self.tray.added = false;
@@ -686,6 +706,23 @@ impl Ui {
             self.buttons();
             self.paint_log();
             if self.closing {
+                if self.pending_install.is_some() {
+                    if !success {
+                        self.closing = false;
+                        self.pending_install = None;
+                        self.append("连接清理失败，已取消安装更新。请查看日志。");
+                        self.buttons();
+                        self.paint_log();
+                        return;
+                    }
+                    if let Err(error) = self.launch_update() {
+                        self.closing = false;
+                        self.append(&format!("无法安装更新：{error:#}"));
+                        self.buttons();
+                        self.paint_log();
+                        return;
+                    }
+                }
                 DestroyWindow(self.hwnd);
                 return;
             }
@@ -736,6 +773,114 @@ impl Ui {
             self.paint_log();
         }
     }
+    unsafe fn start_update(&mut self, release: Option<xxtab::update::Release>) -> Result<()> {
+        if self.updater.is_some() || self.closing {
+            return Ok(());
+        }
+        self.append(if release.is_some() {
+            "正在从 GitHub 下载更新并校验 SHA256…"
+        } else {
+            "正在检查 GitHub Releases…"
+        });
+        self.paint_log();
+        self.updater = Some(
+            std::thread::Builder::new()
+                .name("xxtab-update".into())
+                .stack_size(1024 * 1024)
+                .spawn(move || {
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()?;
+                    runtime.block_on(async {
+                        match release {
+                            Some(release) => Ok(UpdateResult::Downloaded(
+                                xxtab::update::download(&release).await?,
+                            )),
+                            None => Ok(UpdateResult::Checked(xxtab::update::check().await?)),
+                        }
+                    })
+                })?,
+        );
+        self.buttons();
+        Ok(())
+    }
+    unsafe fn launch_update(&mut self) -> Result<()> {
+        if let Some(download) = self.pending_install.take() {
+            xxtab::update::install_after_exit(&download)?;
+        }
+        Ok(())
+    }
+    unsafe fn update_tick(&mut self) {
+        if self.closing
+            || windows_sys::Win32::UI::Input::KeyboardAndMouse::IsWindowEnabled(self.hwnd) == 0
+            || !self
+                .updater
+                .as_ref()
+                .is_some_and(|thread| thread.is_finished())
+        {
+            return;
+        }
+        let result = self
+            .updater
+            .take()
+            .unwrap()
+            .join()
+            .unwrap_or_else(|_| Err(anyhow::anyhow!("更新线程异常结束")));
+        self.buttons();
+        let result = (|| -> Result<()> {
+            match result? {
+                UpdateResult::Checked(check) => {
+                    if check.available {
+                        let release = check.release.context("缺少更新信息")?;
+                        let message = format!(
+                            "当前版本：{}\n新版本：{}\n\n从 GitHub Releases 下载更新？\n下载完成后将再次询问是否安装。",
+                            check.current, release.version
+                        );
+                        if MessageBoxW(
+                            self.hwnd,
+                            wide(&message).as_ptr(),
+                            wide("发现新版本").as_ptr(),
+                            MB_YESNO | MB_ICONINFORMATION,
+                        ) == IDYES
+                        {
+                            self.start_update(Some(release))?;
+                        }
+                    } else {
+                        let message = if check.release.is_none() {
+                            format!("当前版本：{}\nGitHub 尚未发布正式版本。", check.current)
+                        } else {
+                            format!("当前版本：{}\n没有更新的正式版本。", check.current)
+                        };
+                        MessageBoxW(
+                            self.hwnd,
+                            wide(&message).as_ptr(),
+                            wide("检查更新").as_ptr(),
+                            MB_OK | MB_ICONINFORMATION,
+                        );
+                    }
+                }
+                UpdateResult::Downloaded(download) => {
+                    self.append(&format!(
+                        "更新 {} 下载完成，SHA256 校验通过：{}",
+                        download.version,
+                        download.path.display()
+                    ));
+                    self.paint_log();
+                    if MessageBoxW(self.hwnd, wide("更新包校验通过。\n立即断开连接并退出，打开更新安装向导？\n已有配置会保留。").as_ptr(), wide("安装更新").as_ptr(), MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES {
+                        self.pending_install = Some(download);
+                        if self.worker.is_some() { self.closing = true; self.stop(false); }
+                        else { self.launch_update()?; PostMessageW(self.hwnd, WM_CLOSE, 0, 0); }
+                    }
+                }
+            }
+            Ok(())
+        })();
+        if let Err(problem) = result {
+            self.append(&format!("更新失败：{problem:#}"));
+            self.paint_log();
+            error(self.hwnd, format!("更新失败：{problem:#}"));
+        }
+    }
     unsafe fn command(&mut self, id: usize) -> Result<()> {
         if matches!(id, CONNECT | DISCONNECT | RECONNECT) && !self.connection_action_enabled(id) {
             return Ok(());
@@ -744,6 +889,7 @@ impl Ui {
             return Ok(());
         }
         match id {
+            UPDATE => self.start_update(None)?,
             CONNECT => self.start()?,
             DISCONNECT => self.stop(false),
             RECONNECT => self.stop(true),
@@ -1284,6 +1430,7 @@ unsafe fn create_main(store: Store, feed: Arc<Mutex<Feed>>) -> Result<HWND> {
         AppendMenuW(file, MF_STRING, id, wide(label).as_ptr());
     }
     AppendMenuW(menu, MF_POPUP, file as usize, wide("文件").as_ptr());
+    AppendMenuW(menu, MF_STRING, UPDATE, wide("检查更新").as_ptr());
     AppendMenuW(menu, MF_STRING, ABOUT, wide("关于").as_ptr());
     let hwnd = CreateWindowExW(
         WS_EX_CONTROLPARENT,

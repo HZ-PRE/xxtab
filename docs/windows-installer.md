@@ -1,6 +1,6 @@
 # Windows 安装包
 
-安装包：`dist/installers/xxtab-0.1.1-windows-x64-setup.exe`，旁边的 `.sha256` 文件用于校验。
+安装包：`dist/installers/xxtab-0.1.2-windows-x64-setup.exe`，旁边的 `.sha256` 文件用于校验。
 
 支持 Windows 10 1809+ 和 Windows 11 x64。默认安装到 `C:\Program Files\xxtab`，创建开始菜单快捷方式和可选桌面快捷方式，可从 Windows“已安装的应用”中卸载。安装向导使用简体中文和程序的 X 图标。安装、运行及卸载需要管理员权限。
 

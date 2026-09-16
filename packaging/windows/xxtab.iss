@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.1.1"
+  #define AppVersion "0.1.2"
 #endif
 #define RepoRoot SourcePath + "..\..\"
 #define BinaryDir RepoRoot + "target\installer\x86_64-pc-windows-msvc\release\"

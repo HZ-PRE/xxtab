@@ -13,7 +13,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-version:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release tag against Cargo version
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re
+          text = pathlib.Path('Cargo.toml').read_text()
+          version = re.search(r'^version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"', text, re.M).group(1)
+          if os.environ['RELEASE_TAG'] != 'v' + version:
+              raise SystemExit('Release tag must exactly match v<Cargo.toml version>')
+          PY
   windows:
+    needs: release-version
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -26,6 +43,8 @@ jobs:
           key: windows-installer
       - run: cargo fmt --check
       - run: cargo test --locked --features windows-gui --all-targets
+      - name: Verify updater handoff without installing software
+        run: cargo test --locked --lib update::tests::windows_installer_handoff_waits_and_rechecks -- --ignored
       - run: cargo clippy --locked --features windows-gui --all-targets -- -D warnings
       - name: Install packaging compiler
         shell: pwsh
@@ -42,6 +61,7 @@ jobs:
             dist/installers/*-windows-x64-setup.exe.sha256
 
   linux:
+    needs: release-version
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
@@ -74,6 +94,7 @@ jobs:
             dist/installers/*-linux-x64.tar.gz.sha256
 
   macos:
+    needs: release-version
     strategy:
       fail-fast: false
       matrix:
@@ -118,3 +139,40 @@ jobs:
             dist/installers/*-macos-${{ matrix.arch }}.dmg.sha256
             dist/installers/*-macos-${{ matrix.arch }}.app.zip
             dist/installers/*-macos-${{ matrix.arch }}.app.zip.sha256
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.repository == 'HZ-PRE/xxtab'
+    needs: [windows, linux, macos]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: xxtab-*
+          merge-multiple: true
+          path: packages
+      - name: Verify complete package set and publish Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          cd packages
+          for suffix in windows-x64-setup.exe linux-x64.tar.gz macos-arm64.dmg macos-arm64.app.zip macos-x86_64.dmg macos-x86_64.app.zip; do
+            file="xxtab-$version-$suffix"
+            test -s "$file"
+            test -s "$file.sha256"
+            sha256sum --check "$file.sha256"
+          done
+          # Never overwrite assets that clients may already have downloaded.
+          if gh release view "$RELEASE_TAG" --json isDraft > release-state.json 2>/dev/null; then
+            python3 -c 'import json; assert json.load(open("release-state.json"))["isDraft"], "Release is already published; create a new version tag"'
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "xxtab $RELEASE_TAG" --generate-notes
+          fi
+          gh release upload "$RELEASE_TAG" xxtab-* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest

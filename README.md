@@ -14,7 +14,7 @@ WireGuard 加密由系统实现执行；xxtab 不解密 VPN 报文。客户端�
 
 ## Windows 可视化界面
 
-Windows 安装包位于 `dist/installers/xxtab-0.1.1-windows-x64-setup.exe`，支持 Windows 10 1809+ / Windows 11 x64。中文向导会安装界面和命令行程序、创建快捷方式；本机缺少 WireGuard 时从包内安装官方版本，已有版本保留。卸载保留用户配置和系统 WireGuard。安装包中的程序静态链接 C 运行库，无需另装 Visual C++ 运行库。打包及验证方法见 [Windows 安装包说明](docs/windows-installer.md)。
+Windows 安装包位于 `dist/installers/xxtab-0.1.2-windows-x64-setup.exe`，支持 Windows 10 1809+ / Windows 11 x64。中文向导会安装界面和命令行程序、创建快捷方式；本机缺少 WireGuard 时从包内安装官方版本，已有版本保留。卸载保留用户配置和系统 WireGuard。安装包中的程序静态链接 C 运行库，无需另装 Visual C++ 运行库。打包及验证方法见 [Windows 安装包说明](docs/windows-installer.md)。
 
 直接双击 `dist/windows-x64/xxtab-gui.exe`。系统会要求管理员权限，用于启停 WireGuard 和维护路由；不需要额外运行命令行客户端。
 
@@ -23,6 +23,7 @@ Windows 安装包位于 `dist/installers/xxtab-0.1.1-windows-x64-setup.exe`，�
 - **导入配置**：选择现有 `xxtab.toml`（连同它引用的 WireGuard 配置读取），或者直接导入 WireGuard `.conf`。导入 WG 文件后，需要在上方编辑区填写 wstunnel 服务器信息。
 - **新建／编辑配置**：在独立窗口中分别编写隧道 TOML 与 WireGuard 配置；支持配置名称、导入 WG 文件和保存前校验。
 - **查看当前配置**：以只读方式查看、选择和复制当前选中的已保存配置，连接期间也可以使用。
+- **检查更新**：菜单按需检查 GitHub Releases，下载对应平台包并校验 SHA256；确认后断开连接并打开安装向导，保留配置。macOS 使用应用菜单中的同名入口，Linux 使用 `xxtab update check` / `xxtab update download`。详见 [程序更新](docs/updating.md)。
 - **连接／断开／重新连接**：连接过程在后台线程执行；连接时锁定配置选择与编辑。重新连接会先完成清理再启动；关闭主窗口也会先断开并清理。
 - **系统托盘**：最小化后隐藏到托盘，隧道继续运行；点击托盘图标恢复窗口。右键菜单提供“连接、断开、重新连接、退出”，按当前状态启用操作；退出会先断开并清理接口与路由。资源管理器重启后自动恢复托盘图标。
 - **状态和日志**：显示隧道状态、连接时长、配置地址，以及底部实时日志；支持选择复制和清空日志。日志历史与待显示队列都有上限。
@@ -37,7 +38,7 @@ GUI 配置保存在 `%LOCALAPPDATA%\xxtab\profiles`，导入的原始文件不�
 
 macOS 提供原生 AppKit 界面和菜单栏控制，支持 Apple Silicon / Intel。安装、权限与打包见 [macOS 使用说明](docs/macos.md)。Linux 继续使用命令行，不构建或依赖图形界面。
 
-GitHub Actions 在 push / PR / 手动触发时自动生成 Windows 安装 EXE、两种架构的 macOS DMG / App ZIP、Linux CLI 包；下载方法见 [CI 自动打包说明](docs/ci.md)。安装包仅包含运行组件和许可文件。
+GitHub Actions 在 push / PR / 手动触发时自动生成 Windows 安装 EXE、两种架构的 macOS DMG / App ZIP、Linux CLI 包；推送与 Cargo.toml 版本一致的 `v版本号` 标签后，全部构建成功会自动发布 GitHub Release，供客户端检查更新。下载方法见 [CI 自动打包说明](docs/ci.md)。安装包仅包含运行组件和许可文件。
 
 ## 快速开始
 

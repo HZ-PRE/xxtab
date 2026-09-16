@@ -7,4 +7,5 @@ pub mod macos;
 pub mod profiles;
 pub mod system;
 pub mod transport;
+pub mod update;
 pub mod wgconfig;

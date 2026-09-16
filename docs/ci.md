@@ -15,6 +15,8 @@
 
 Windows/Linux 执行 Rust 测试、rustfmt 和 Clippy。Mac 分别在 `macos-15`（arm64）和 `macos-15-intel` 上编译，额外测试系统路由和真实 WireGuard 接口清理、原生 AppKit 控件、显式停止及失去 GUI 心跳后的清理。失败时不会上传对应平台产物。
 
-工作流仅需仓库只读权限，使用 GitHub 的 artifact 存储，不自动发布 Release、不提交代码、不安装到用户机器。fork PR 不需要任何仓库 secret。
+普通 push、PR 和手动运行只构建 Artifacts，使用仓库只读权限。推送 `v版本号` 标签时，CI 先检查标签与 Cargo.toml 完全一致，待四个平台构建成功后，汇总安装包和 SHA256，创建草稿 Release、上传全部文件并校验，再公开为 Latest。仅发布任务拥有 `contents: write`；使用内置 `GITHUB_TOKEN`，不需要个人令牌。fork PR 不发布 Release。
+
+已公开的版本不会被覆盖；修复后必须增加版本号、使用新标签。失败留下的草稿可通过重跑发布任务补齐。操作步骤和客户端更新入口见 [程序更新](updating.md)。工作流不提交代码，也不安装到用户机器。
 
 Mac 默认 ad-hoc 签名，无 Developer ID 公证；正式发布的签名方式见 `docs/macos.md`。Linux 在 Ubuntu 22.04 构建，目标 glibc 2.35+。Windows 使用静态 CRT，目标 Windows 10 1809+ x64。

@@ -1,0 +1,14 @@
+xxtab — WireGuard + WebSocket 轻量客户端
+
+适用于 Windows 10（1809 及以上）和 Windows 11，x64。
+
+安装内容：图形界面、命令行客户端、配置示例及使用说明。
+默认安装到 Program Files\xxtab，可选择创建桌面快捷方式。
+
+依赖：如果本机尚未安装官方 WireGuard，将从本安装包安装 WireGuard 0.5.3，无需联网下载。已有 WireGuard 会保留，不会降级。
+
+安装完成后，打开 xxtab，导入或新建配置，再点击连接。默认 remote 为 127.0.0.1:7007，表示 wstunnel 服务端访问的 WireGuard 地址。
+
+安装和运行需要管理员权限，用于管理 WireGuard 接口和路由。升级或卸载前，请先断开连接并正常退出客户端。
+
+用户配置保存在当前用户的 %LOCALAPPDATA%\xxtab\profiles。卸载 xxtab 会保留这些配置，也不会卸载系统 WireGuard。若使用其他管理员账号授权运行，配置属于该管理员账号。

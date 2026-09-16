@@ -1,0 +1,21 @@
+# IPv4 outer connection; hostname retained for TLS SNI and certificate checking.
+server = "wss://vpn.example.com:443"
+# Optional: pin an IPv4 address to avoid startup DNS lookup.
+# server_ip = "203.0.113.10"
+path_prefix = "change-to-your-long-random-secret"
+remote = "127.0.0.1:7007"
+listen = "127.0.0.1:51820"
+# Optional private CA, PEM; paths are relative to this TOML file.
+# ca_file = "ca.pem"
+
+[wireguard]
+config = "wg.conf"
+name = "xxtab0"
+mtu = 1280
+# executable = "C:\\Program Files\\WireGuard\\wireguard.exe"
+
+[transport]
+# Try "interactive" for remote desktop / internal services behind a slow proxy.
+# "balanced" retains OS TCP buffering and FIFO order for general throughput.
+latency_mode = "balanced"
+diagnostics_interval_secs = 15

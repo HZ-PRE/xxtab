@@ -1,0 +1,494 @@
+{
+  "live-balanced-page": [
+    {
+      "sample": 1,
+      "tcp_ms": 393.6,
+      "ttfb_ms": 787.0,
+      "total_ms": 787.2,
+      "status": 302,
+      "bytes": 29
+    },
+    {
+      "sample": 2,
+      "tcp_ms": 389.4,
+      "ttfb_ms": 796.3,
+      "total_ms": 796.9,
+      "status": 302,
+      "bytes": 29
+    },
+    {
+      "sample": 3,
+      "tcp_ms": 421.2,
+      "ttfb_ms": 817.0,
+      "total_ms": 817.0,
+      "status": 302,
+      "bytes": 29
+    },
+    {
+      "sample": 4,
+      "tcp_ms": 390.1,
+      "ttfb_ms": 782.9,
+      "total_ms": 783.0,
+      "status": 302,
+      "bytes": 29
+    },
+    {
+      "sample": 5,
+      "tcp_ms": 390.4,
+      "ttfb_ms": 780.3,
+      "total_ms": 780.4,
+      "status": 302,
+      "bytes": 29
+    },
+    {
+      "sample": 6,
+      "tcp_ms": 394.5,
+      "ttfb_ms": 784.8,
+      "total_ms": 784.9,
+      "status": 302,
+      "bytes": 29
+    },
+    {
+      "sample": 7,
+      "tcp_ms": 394.6,
+      "ttfb_ms": 796.3,
+      "total_ms": 796.4,
+      "status": 302,
+      "bytes": 29
+    },
+    {
+      "sample": 8,
+      "tcp_ms": 912.3,
+      "ttfb_ms": 1766.5,
+      "total_ms": 1766.5,
+      "status": 302,
+      "bytes": 29
+    }
+  ],
+  "live-balanced-complete": {
+    "requests": [
+      {
+        "sample": 1,
+        "tcp_ms": 399.2,
+        "status": 302,
+        "ttfb_ms": 793.2,
+        "bytes": 29,
+        "total_ms": 793.3
+      },
+      {
+        "sample": 2,
+        "tcp_ms": 394.3,
+        "status": 302,
+        "ttfb_ms": 784.7,
+        "bytes": 29,
+        "total_ms": 785.0
+      },
+      {
+        "sample": 3,
+        "tcp_ms": 389.5,
+        "status": 302,
+        "ttfb_ms": 782.4,
+        "bytes": 29,
+        "total_ms": 782.5
+      },
+      {
+        "sample": 4,
+        "tcp_ms": 393.9,
+        "status": 302,
+        "ttfb_ms": 783.6,
+        "bytes": 29,
+        "total_ms": 783.7
+      },
+      {
+        "sample": 5,
+        "tcp_ms": 389.0,
+        "status": 302,
+        "ttfb_ms": 782.4,
+        "bytes": 29,
+        "total_ms": 782.8
+      },
+      {
+        "sample": 6,
+        "tcp_ms": 389.9,
+        "status": 302,
+        "ttfb_ms": 780.2,
+        "bytes": 29,
+        "total_ms": 780.5
+      },
+      {
+        "sample": 7,
+        "tcp_ms": 392.2,
+        "status": 302,
+        "ttfb_ms": 784.9,
+        "bytes": 29,
+        "total_ms": 784.9
+      },
+      {
+        "sample": 8,
+        "tcp_ms": 408.7,
+        "status": 302,
+        "ttfb_ms": 812.6,
+        "bytes": 29,
+        "total_ms": 812.7
+      }
+    ],
+    "page": {
+      "status": 200,
+      "bytes": 430,
+      "total_ms": 1566.7
+    },
+    "assets": [
+      {
+        "status": 200,
+        "bytes": 1659242,
+        "ttfb_ms": 989.9,
+        "total_ms": 9382.5
+      },
+      {
+        "status": 200,
+        "bytes": 104339,
+        "ttfb_ms": 988.0,
+        "total_ms": 2385.8
+      }
+    ]
+  },
+  "live-interactive": {
+    "requests": [
+      {
+        "sample": 1,
+        "tcp_ms": 397.4,
+        "status": 302,
+        "ttfb_ms": 787.3,
+        "bytes": 29,
+        "total_ms": 787.3
+      },
+      {
+        "sample": 2,
+        "tcp_ms": 464.2,
+        "status": 302,
+        "ttfb_ms": 859.7,
+        "bytes": 29,
+        "total_ms": 859.8
+      },
+      {
+        "sample": 3,
+        "tcp_ms": 395.3,
+        "status": 302,
+        "ttfb_ms": 786.6,
+        "bytes": 29,
+        "total_ms": 786.6
+      },
+      {
+        "sample": 4,
+        "tcp_ms": 390.4,
+        "status": 302,
+        "ttfb_ms": 785.0,
+        "bytes": 29,
+        "total_ms": 785.2
+      },
+      {
+        "sample": 5,
+        "tcp_ms": 394.0,
+        "status": 302,
+        "ttfb_ms": 784.8,
+        "bytes": 29,
+        "total_ms": 785.1
+      },
+      {
+        "sample": 6,
+        "tcp_ms": 389.9,
+        "status": 302,
+        "ttfb_ms": 783.8,
+        "bytes": 29,
+        "total_ms": 783.8
+      },
+      {
+        "sample": 7,
+        "tcp_ms": 395.4,
+        "status": 302,
+        "ttfb_ms": 785.0,
+        "bytes": 29,
+        "total_ms": 785.1
+      },
+      {
+        "sample": 8,
+        "tcp_ms": 391.4,
+        "status": 302,
+        "ttfb_ms": 785.4,
+        "bytes": 29,
+        "total_ms": 785.5
+      }
+    ],
+    "page": {
+      "status": 200,
+      "bytes": 430,
+      "total_ms": 1584.7
+    },
+    "assets": [
+      {
+        "error": "HTTPError"
+      },
+      {
+        "error": "HTTPError"
+      }
+    ]
+  },
+  "live-alternate": {
+    "requests": [
+      {
+        "sample": 1,
+        "tcp_ms": 426.7,
+        "status": 302,
+        "ttfb_ms": 849.4,
+        "bytes": 29,
+        "total_ms": 849.5
+      },
+      {
+        "sample": 2,
+        "tcp_ms": 418.6,
+        "status": 302,
+        "ttfb_ms": 842.1,
+        "bytes": 29,
+        "total_ms": 842.3
+      },
+      {
+        "sample": 3,
+        "tcp_ms": 423.8,
+        "status": 302,
+        "ttfb_ms": 843.1,
+        "bytes": 29,
+        "total_ms": 843.2
+      },
+      {
+        "sample": 4,
+        "tcp_ms": 418.9,
+        "status": 302,
+        "ttfb_ms": 839.5,
+        "bytes": 29,
+        "total_ms": 839.6
+      },
+      {
+        "sample": 5,
+        "tcp_ms": 422.6,
+        "status": 302,
+        "ttfb_ms": 847.6,
+        "bytes": 29,
+        "total_ms": 847.7
+      },
+      {
+        "sample": 6,
+        "tcp_ms": 421.3,
+        "status": 302,
+        "ttfb_ms": 840.8,
+        "bytes": 29,
+        "total_ms": 841.0
+      },
+      {
+        "sample": 7,
+        "tcp_ms": 628.6,
+        "status": 302,
+        "ttfb_ms": 1290.0,
+        "bytes": 29,
+        "total_ms": 1290.2
+      },
+      {
+        "sample": 8,
+        "tcp_ms": 421.5,
+        "status": 302,
+        "ttfb_ms": 845.4,
+        "bytes": 29,
+        "total_ms": 845.5
+      }
+    ],
+    "page": {
+      "status": 200,
+      "bytes": 430,
+      "total_ms": 1684.8
+    },
+    "assets": [
+      {
+        "status": 200,
+        "bytes": 1659242,
+        "ttfb_ms": 1092.1,
+        "total_ms": 6905.9
+      },
+      {
+        "status": 200,
+        "bytes": 104339,
+        "ttfb_ms": 1092.4,
+        "total_ms": 3343.3
+      }
+    ]
+  },
+  "live-mtu1420": {
+    "requests": [
+      {
+        "sample": 1,
+        "tcp_ms": 404.6,
+        "status": 302,
+        "ttfb_ms": 816.4,
+        "bytes": 29,
+        "total_ms": 816.6
+      },
+      {
+        "sample": 2,
+        "tcp_ms": 409.3,
+        "status": 302,
+        "ttfb_ms": 814.0,
+        "bytes": 29,
+        "total_ms": 814.1
+      },
+      {
+        "sample": 3,
+        "tcp_ms": 411.4,
+        "status": 302,
+        "ttfb_ms": 812.1,
+        "bytes": 29,
+        "total_ms": 812.2
+      },
+      {
+        "sample": 4,
+        "tcp_ms": 400.7,
+        "status": 302,
+        "ttfb_ms": 812.6,
+        "bytes": 29,
+        "total_ms": 812.7
+      },
+      {
+        "sample": 5,
+        "tcp_ms": 402.8,
+        "status": 302,
+        "ttfb_ms": 815.7,
+        "bytes": 29,
+        "total_ms": 815.8
+      },
+      {
+        "sample": 6,
+        "tcp_ms": 411.7,
+        "status": 302,
+        "ttfb_ms": 812.7,
+        "bytes": 29,
+        "total_ms": 812.7
+      },
+      {
+        "sample": 7,
+        "tcp_ms": 423.4,
+        "status": 302,
+        "ttfb_ms": 837.6,
+        "bytes": 29,
+        "total_ms": 837.7
+      },
+      {
+        "sample": 8,
+        "tcp_ms": 401.9,
+        "status": 302,
+        "ttfb_ms": 815.3,
+        "bytes": 29,
+        "total_ms": 815.5
+      }
+    ],
+    "page": {
+      "status": 200,
+      "bytes": 430,
+      "total_ms": 1879.6
+    },
+    "assets": [
+      {
+        "status": 200,
+        "bytes": 1659242,
+        "ttfb_ms": 811.8,
+        "total_ms": 9292.5
+      },
+      {
+        "status": 200,
+        "bytes": 104339,
+        "ttfb_ms": 825.5,
+        "total_ms": 3022.5
+      }
+    ]
+  },
+  "live-interactive-complete": {
+    "requests": [
+      {
+        "sample": 1,
+        "tcp_ms": 404.2,
+        "status": 302,
+        "ttfb_ms": 807.1,
+        "bytes": 29,
+        "total_ms": 807.4
+      },
+      {
+        "sample": 2,
+        "tcp_ms": 406.2,
+        "status": 302,
+        "ttfb_ms": 806.8,
+        "bytes": 29,
+        "total_ms": 806.9
+      },
+      {
+        "sample": 3,
+        "tcp_ms": 401.5,
+        "status": 302,
+        "ttfb_ms": 802.7,
+        "bytes": 29,
+        "total_ms": 803.1
+      },
+      {
+        "sample": 4,
+        "tcp_ms": 403.1,
+        "status": 302,
+        "ttfb_ms": 808.3,
+        "bytes": 29,
+        "total_ms": 808.4
+      }
+    ],
+    "page": {
+      "status": 200,
+      "bytes": 430,
+      "total_ms": 1852.2
+    },
+    "assets": [
+      {
+        "status": 200,
+        "bytes": 1659242,
+        "ttfb_ms": 822.6,
+        "total_ms": 10927.7
+      },
+      {
+        "status": 200,
+        "bytes": 104339,
+        "ttfb_ms": 809.2,
+        "total_ms": 2321.8
+      }
+    ]
+  },
+  "live-compression": [
+    {
+      "request_encoding": "gzip",
+      "response_encoding": "gzip",
+      "bytes": 477350,
+      "ttfb_ms": 786.7,
+      "total_ms": 3588.2,
+      "cache_control": null,
+      "etag": false
+    },
+    {
+      "request_encoding": "identity",
+      "response_encoding": "identity",
+      "bytes": 1659242,
+      "ttfb_ms": 781.3,
+      "total_ms": 5195.0,
+      "cache_control": null,
+      "etag": false
+    },
+    {
+      "request_encoding": "gzip",
+      "response_encoding": "gzip",
+      "bytes": 477350,
+      "ttfb_ms": 1036.2,
+      "total_ms": 3384.6,
+      "cache_control": null,
+      "etag": false
+    }
+  ]
+}

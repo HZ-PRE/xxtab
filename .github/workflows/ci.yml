@@ -1,0 +1,34 @@
+name: build-and-test
+on: [push, pull_request]
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92.0
+        with:
+          components: clippy, rustfmt
+      - run: cargo fmt --check
+      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo build --release --locked
+      - if: runner.os == 'Windows'
+        run: cargo test --locked --features windows-gui --all-targets
+      - if: runner.os == 'Windows'
+        run: cargo clippy --locked --features windows-gui --all-targets -- -D warnings
+      - if: runner.os == 'Windows'
+        run: cargo build --release --locked --features windows-gui
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xxtab-${{ matrix.os }}
+          path: |
+            target/release/xxtab
+            target/release/xxtab.exe
+            target/release/xxtab-gui.exe
+            examples/
+            docs/
+            README.md
+            LICENSE

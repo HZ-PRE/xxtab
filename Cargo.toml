@@ -1,0 +1,48 @@
+[package]
+name = "xxtab"
+version = "0.1.1"
+edition = "2024"
+rust-version = "1.89"
+description = "Small system WireGuard manager with embedded wstunnel WebSocket transport"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+fastwebsockets = { version = "0.10", features = ["upgrade", "unstable-split"] }
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+ipnet = "2"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pemfile = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+socket2 = { version = "0.6", features = ["all"] }
+tempfile = "3"
+tokio = { version = "1", features = ["rt", "macros", "net", "signal", "time", "sync", "io-util"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+toml = "0.9"
+url = "2"
+webpki-roots = "1"
+
+[features]
+windows-gui = []
+
+[build-dependencies]
+winresource = "0.1"
+
+[[bin]]
+name = "xxtab-gui"
+path = "src/bin/gui.rs"
+required-features = ["windows-gui"]
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Storage_Xps", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_UI_Controls", "Win32_UI_Controls_Dialogs", "Win32_UI_HiDpi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell"] }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+strip = true
+panic = "abort"

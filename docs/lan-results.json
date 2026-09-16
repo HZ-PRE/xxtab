@@ -1,0 +1,158 @@
+[
+  {
+    "mode": "idle",
+    "samples": 100,
+    "p50_ms": 3.743807500008245,
+    "p99_ms": 8.981266999995796,
+    "variant": "base",
+    "run": 1
+  },
+  {
+    "mode": "upload",
+    "samples": 45,
+    "p50_ms": 122.40295300000525,
+    "p99_ms": 214.93501199999798,
+    "mbps": 5.810102597607122,
+    "variant": "base",
+    "run": 1
+  },
+  {
+    "mode": "download",
+    "samples": 42,
+    "p50_ms": 104.11295199999415,
+    "p99_ms": 283.9866449999988,
+    "mbps": 5.917571967922706,
+    "variant": "base",
+    "run": 1
+  },
+  {
+    "mode": "idle",
+    "samples": 100,
+    "p50_ms": 3.7632344999991574,
+    "p99_ms": 9.269315000011602,
+    "variant": "base",
+    "run": 2
+  },
+  {
+    "mode": "upload",
+    "samples": 42,
+    "p50_ms": 110.42062349999782,
+    "p99_ms": 283.8106220000043,
+    "mbps": 5.867054933667075,
+    "variant": "base",
+    "run": 2
+  },
+  {
+    "mode": "download",
+    "samples": 41,
+    "p50_ms": 112.32514799999649,
+    "p99_ms": 272.23229599999854,
+    "mbps": 5.98176972735535,
+    "variant": "base",
+    "run": 2
+  },
+  {
+    "mode": "idle",
+    "samples": 100,
+    "p50_ms": 3.5051305000024513,
+    "p99_ms": 7.559488999987707,
+    "variant": "base",
+    "run": 3
+  },
+  {
+    "mode": "upload",
+    "samples": 45,
+    "p50_ms": 102.47280600000863,
+    "p99_ms": 205.7567730000187,
+    "mbps": 5.852816283110198,
+    "variant": "base",
+    "run": 3
+  },
+  {
+    "mode": "download",
+    "samples": 42,
+    "p50_ms": 101.77509700000087,
+    "p99_ms": 286.02362199998765,
+    "mbps": 5.9642939065141745,
+    "variant": "base",
+    "run": 3
+  },
+  {
+    "mode": "idle",
+    "samples": 100,
+    "p50_ms": 3.7977854999979854,
+    "p99_ms": 9.041164999999296,
+    "variant": "interactive",
+    "run": 1
+  },
+  {
+    "mode": "upload",
+    "samples": 66,
+    "p50_ms": 81.79234799999335,
+    "p99_ms": 113.9875350000068,
+    "mbps": 5.81936663072886,
+    "variant": "interactive",
+    "run": 1
+  },
+  {
+    "mode": "download",
+    "samples": 45,
+    "p50_ms": 101.52212500000246,
+    "p99_ms": 278.77792399999635,
+    "mbps": 5.925965051686936,
+    "variant": "interactive",
+    "run": 1
+  },
+  {
+    "mode": "idle",
+    "samples": 100,
+    "p50_ms": 4.09246700000665,
+    "p99_ms": 9.066916000023184,
+    "variant": "interactive",
+    "run": 2
+  },
+  {
+    "mode": "upload",
+    "samples": 64,
+    "p50_ms": 80.26156999999046,
+    "p99_ms": 117.79854599998885,
+    "mbps": 5.929881148235208,
+    "variant": "interactive",
+    "run": 2
+  },
+  {
+    "mode": "download",
+    "samples": 42,
+    "p50_ms": 106.78395899999771,
+    "p99_ms": 268.14994400001524,
+    "mbps": 5.953257674612174,
+    "variant": "interactive",
+    "run": 2
+  },
+  {
+    "mode": "idle",
+    "samples": 100,
+    "p50_ms": 3.8836720000006153,
+    "p99_ms": 8.659688000022925,
+    "variant": "interactive",
+    "run": 3
+  },
+  {
+    "mode": "upload",
+    "samples": 67,
+    "p50_ms": 79.04796100001477,
+    "p99_ms": 96.85860400000479,
+    "mbps": 5.92418786846438,
+    "variant": "interactive",
+    "run": 3
+  },
+  {
+    "mode": "download",
+    "samples": 42,
+    "p50_ms": 97.10284999999885,
+    "p99_ms": 286.067968999987,
+    "mbps": 6.08546830923509,
+    "variant": "interactive",
+    "run": 3
+  }
+]

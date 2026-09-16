@@ -1,0 +1,14 @@
+WireGuard for Windows 0.5.3
+Copyright (C) 2018-2021 WireGuard LLC. All Rights Reserved.
+License: accompanying WireGuard-LICENSE.txt
+Website: https://www.wireguard.com/
+Source: https://git.zx2c4.com/wireguard-windows/tag/?h=v0.5.3
+Original signed MSI: https://download.wireguard.com/windows-client/wireguard-amd64-0.5.3.msi
+SHA256: 76fcec042c5989c5b816cd32eaed1e5b1c3b998a4b1c9eca55f299e3314ef7e4
+
+The original MSI is bundled without modification and installed only if the
+standard WireGuard executable is absent. xxtab does not uninstall WireGuard.
+
+Installer engine: Inno Setup, https://jrsoftware.org/isinfo.php
+Chinese translation: Inno Setup is-6_7_1,
+Files/Languages/Unofficial/ChineseSimplified.isl (credits in the source file).

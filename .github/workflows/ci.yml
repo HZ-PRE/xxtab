@@ -169,6 +169,8 @@ jobs:
             file="xxtab-$version-$suffix"
             test -s "$file"
             test -s "$file.sha256"
+            # Also accept older Windows artifacts; upload the normalized sidecar.
+            sed -i 's/\r$//' "$file.sha256"
             sha256sum --check "$file.sha256"
           done
           # Never overwrite assets that clients may already have downloaded.

@@ -71,7 +71,8 @@ try {
         Join-Path $repoRoot "dist/installers/xxtab-$version-windows-x64-setup.exe"
     }
     $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
-    "$hash  $(Split-Path -Leaf $installer)" | Set-Content -LiteralPath "$installer.sha256" -Encoding ascii
+    # GNU sha256sum treats CR from Windows CRLF as part of the filename.
+    [System.IO.File]::WriteAllText("$installer.sha256", "$hash  $(Split-Path -Leaf $installer)`n", [System.Text.Encoding]::ASCII)
     Get-Item -LiteralPath $installer | Select-Object FullName, Length
 } finally {
     Pop-Location

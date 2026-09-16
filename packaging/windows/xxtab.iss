@@ -47,15 +47,10 @@ Name: "zhcn"; MessagesFile: "ChineseSimplified.isl"
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "快捷方式："
 
 [Files]
-; Explicit allowlist: exclude docs, dist backups and local/user configurations.
+; Runtime-only allowlist: programs, required dependency and license notices.
 Source: "{#BinaryDir}xxtab-gui.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BinaryDir}xxtab.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoRoot}LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#RepoRoot}README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#RepoRoot}tools\diagnose-network.ps1"; DestDir: "{app}\tools"; Flags: ignoreversion
-Source: "{#RepoRoot}deploy\nginx-xxtab.conf.example"; DestDir: "{app}\examples"; Flags: onlyifdoesntexist
-Source: "{#RepoRoot}examples\xxtab.toml"; DestDir: "{app}\examples"; Flags: onlyifdoesntexist
-Source: "{#RepoRoot}examples\wg.conf.example"; DestDir: "{app}\examples"; Flags: onlyifdoesntexist
 Source: "WireGuard-LICENSE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "third-party.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "{#RepoRoot}.tools\wireguard-amd64-0.5.3.msi"; Flags: dontcopy noencryption

@@ -34,6 +34,11 @@ function Run-Setup {
 }
 try {
     if ((Run-Setup) -ne 0) { throw "Installation failed; see $log" }
+    foreach ($excluded in 'docs','examples','tools','README.md') {
+        if (Test-Path -LiteralPath (Join-Path $testDir $excluded)) {
+            throw "Non-runtime content was installed: $excluded"
+        }
+    }
     foreach ($name in 'xxtab.exe','xxtab-gui.exe') {
         $installed = (Get-FileHash -LiteralPath (Join-Path $testDir $name)).Hash
         $built = (Get-FileHash -LiteralPath (Join-Path $repoRoot "target/installer/x86_64-pc-windows-msvc/release/$name")).Hash
@@ -56,15 +61,13 @@ try {
     }
     $marker = Join-Path $testDir 'user-note.txt'
     Set-Content -LiteralPath $marker -Value 'preserve user-created files'
-    $example = Join-Path $testDir 'examples/xxtab.toml'
-    Add-Content -LiteralPath $example -Value '# edited sample retained during upgrade'
-    $exampleHash = (Get-FileHash -LiteralPath $example).Hash
+    $markerHash = (Get-FileHash -LiteralPath $marker).Hash
     $locked = [IO.File]::Open((Join-Path $testDir 'xxtab-gui.exe'), 'Open', 'Read', 'Read')
     try {
         if ((Run-Setup) -eq 0) { throw 'Upgrade must reject an in-use executable.' }
     } finally { $locked.Dispose() }
     if ((Run-Setup) -ne 0) { throw 'Upgrade failed after releasing the executable.' }
-    if ((Get-FileHash -LiteralPath $example).Hash -ne $exampleHash) { throw 'Upgrade overwrote an edited example.' }
+    if ((Get-FileHash -LiteralPath $marker).Hash -ne $markerHash) { throw 'Upgrade overwrote a user file.' }
     $process = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -WindowStyle Hidden -Wait -PassThru
     if ($process.ExitCode -ne 0) { throw 'Uninstall failed.' }
     if ((Test-Path -LiteralPath "$testDir/xxtab-gui.exe") -or (Test-Path -LiteralPath $regPath) -or (Test-Path -LiteralPath $desktopLink) -or (Test-Path -LiteralPath $menu)) {
@@ -72,7 +75,7 @@ try {
     }
     if (-not (Test-Path -LiteralPath $marker)) { throw 'Uninstall removed an untracked user file.' }
     if ((Get-FileHash -LiteralPath $wireguard).Hash -ne $wgHash) { throw 'WireGuard executable was modified.' }
-    Write-Output 'PASS: install, binary hashes, shortcuts, registration, dependency detection, locked-file protection, upgrade, uninstall and user-file preservation.'
+    Write-Output 'PASS: runtime-only package, install, binary hashes, shortcuts, registration, dependency detection, locked-file protection, upgrade, uninstall and user-file preservation.'
 } finally {
     # The test only removes its own installation, using its own uninstaller.
     if (Test-Path -LiteralPath $uninstaller) {

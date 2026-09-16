@@ -43,7 +43,7 @@ Pong 可能由代理处理，不能把 `ws_rtt` 当成内网主机 RTT 或 WireG
 .\tools\diagnose-network.ps1 -Server vpn.example.com -TargetIP 10.0.0.10 -TargetPort 443 -TargetName intranet.example.com
 ```
 
-安装版脚本位于安装目录的 `tools` 下。脚本只解析 DNS、查看路由／MTU、测 ICMP 和 TCP 建连，不读取私钥或 path_prefix，不修改网络。分别在空闲和传输文件时运行；ICMP 被禁不代表 TCP 故障，TCP 建连耗时也不是应用完整响应时间。
+脚本位于源码目录的 `tools` 下，精简安装包不附带该脚本。脚本只解析 DNS、查看路由／MTU、测 ICMP 和 TCP 建连，不读取私钥或 path_prefix，不修改网络。分别在空闲和传输文件时运行；ICMP 被禁不代表 TCP 故障，TCP 建连耗时也不是应用完整响应时间。
 
 检查内网 IP 是否实际走 WireGuard 接口。本地与远端内网地址段重叠时，更具体的本地路由可能抢走流量，需要按实际地址规划处理。对比内部域名解析与直接 IP；公共 DNS 通常不能解析企业私有域名。不要为测试随意改默认路由。
 
@@ -51,7 +51,7 @@ Linux 可使用 `ip route get 内网IP`、`ping -c 10 内网IP`、`getent ahosts
 
 ## nginx / Cloudflare
 
-参考 `deploy/nginx-xxtab.conf.example`；安装版在 `examples` 目录。替换域名、证书路径和 path_prefix，先用 `nginx -t` 检查，再应用到目标站点；不要覆盖承载其他业务的整个配置。
+参考源码中的 `deploy/nginx-xxtab.conf.example`，精简安装包不附带该示例。替换域名、证书路径和 path_prefix，先用 `nginx -t` 检查，再应用到目标站点；不要覆盖承载其他业务的整个配置。
 
 示例将 wstunnel 绑定到 `127.0.0.1:8080`，TLS 在 nginx 终止，Cloudflare 使用 **Full (strict)**。同机 nginx 到 wstunnel 使用 loopback WS，客户端到边缘节点、边缘节点到 nginx 仍使用 TLS。保留 HTTP/1.1 和 Upgrade/Connection，启用 TCP_NODELAY，设置合适空闲超时并使用心跳。
 

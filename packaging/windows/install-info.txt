@@ -2,7 +2,7 @@ xxtab — WireGuard + WebSocket 轻量客户端
 
 适用于 Windows 10（1809 及以上）和 Windows 11，x64。
 
-安装内容：图形界面、命令行客户端、配置示例及使用说明。
+安装内容：图形界面、命令行客户端及许可文件。配置模板内置于程序，无需额外示例文件。
 默认安装到 Program Files\xxtab，可选择创建桌面快捷方式。
 
 依赖：如果本机尚未安装官方 WireGuard，将从本安装包安装 WireGuard 0.5.3，无需联网下载。已有 WireGuard 会保留，不会降级。

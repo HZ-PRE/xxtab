@@ -22,9 +22,16 @@ async fn shutdown() -> Result<()> {
 }
 async fn execute() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.len() == 1 && args[0] == "desktop" {
+        return xxtab::desktop::serve();
+    }
+    #[cfg(target_os = "macos")]
+    if args.len() == 3 && args[0] == "macos-session" {
+        return xxtab::macos::session(Path::new(&args[1]), args[2].parse()?).await;
+    }
     if args.is_empty() || matches!(args[0].as_str(), "--help" | "-h") {
         println!(
-            "xxtab {}\n\nUsage: xxtab <check|run|relay> <config.toml>\n\n  check  Validate config offline; no network/system changes\n  run    Manage system WireGuard and embedded wstunnel (admin/root)\n  relay  Only run embedded wstunnel; first local UDP sender is pinned\n\nCtrl+C (Linux also SIGTERM) stops and cleans up managed WireGuard.",
+            "xxtab {}\n\nUsage: xxtab <check|run|relay> <config.toml>\n\n  check  Validate config offline; no network/system changes\n  run    Manage system WireGuard and embedded wstunnel (admin/root)\n  relay  Only run embedded wstunnel; first local UDP sender is pinned\n\nCtrl+C (Linux/macOS also SIGTERM) stops and cleans up managed WireGuard.",
             env!("CARGO_PKG_VERSION")
         );
         return Ok(());

@@ -1,6 +1,9 @@
 pub mod app;
 pub mod config;
+pub mod desktop;
 pub mod logging;
+#[cfg(target_os = "macos")]
+pub mod macos;
 pub mod profiles;
 pub mod system;
 pub mod transport;

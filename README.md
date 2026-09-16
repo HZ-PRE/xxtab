@@ -1,6 +1,6 @@
 # xxtab
 
-轻量 Rust 客户端，将 **系统 WireGuard + 内置 wstunnel WebSocket 传输**统一管理，支持 Windows / Linux。
+轻量 Rust 客户端，将 **系统 WireGuard + 内置 wstunnel WebSocket 传输**统一管理，支持 Windows / Linux / macOS。
 
 ```text
 应用流量 → 系统 WireGuard → 127.0.0.1:51820/UDP
@@ -35,7 +35,9 @@ GUI 配置保存在 `%LOCALAPPDATA%\xxtab\profiles`，导入的原始文件不�
 
 ![Windows 配置编辑窗口（测试用密钥）](docs/windows-editor.png)
 
-Linux 继续使用命令行，不构建或依赖 Windows 界面。
+macOS 提供原生 AppKit 界面和菜单栏控制，支持 Apple Silicon / Intel。安装、权限与打包见 [macOS 使用说明](docs/macos.md)。Linux 继续使用命令行，不构建或依赖图形界面。
+
+GitHub Actions 在 push / PR / 手动触发时自动生成 Windows 安装 EXE、两种架构的 macOS DMG / App ZIP、Linux CLI 包；下载方法见 [CI 自动打包说明](docs/ci.md)。安装包仅包含运行组件和许可文件。
 
 ## 快速开始
 

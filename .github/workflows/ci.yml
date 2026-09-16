@@ -1,34 +1,118 @@
-name: build-and-test
-on: [push, pull_request]
+name: Build, test and package
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packages-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.92.0
         with:
           components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-installer
       - run: cargo fmt --check
-      - run: cargo test --locked
-      - run: cargo clippy --locked --all-targets -- -D warnings
-      - run: cargo build --release --locked
-      - if: runner.os == 'Windows'
-        run: cargo test --locked --features windows-gui --all-targets
-      - if: runner.os == 'Windows'
-        run: cargo clippy --locked --features windows-gui --all-targets -- -D warnings
-      - if: runner.os == 'Windows'
-        run: cargo build --release --locked --features windows-gui
+      - run: cargo test --locked --features windows-gui --all-targets
+      - run: cargo clippy --locked --features windows-gui --all-targets -- -D warnings
+      - name: Install packaging compiler
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+      - name: Build minimal Windows installer
+        shell: pwsh
+        run: ./tools/build-installer.ps1
       - uses: actions/upload-artifact@v4
         with:
-          name: xxtab-${{ matrix.os }}
+          name: xxtab-windows-x64
+          if-no-files-found: error
           path: |
-            target/release/xxtab
-            target/release/xxtab.exe
-            target/release/xxtab-gui.exe
-            examples/
-            docs/
-            README.md
-            LICENSE
+            dist/installers/*-windows-x64-setup.exe
+            dist/installers/*-windows-x64-setup.exe.sha256
+
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92.0
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-x64
+      - run: cargo fmt --check
+      - run: cargo test --locked --all-targets
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo build --release --locked --bin xxtab
+      - name: Package CLI and license only
+        shell: bash
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "xxtab"))')
+          mkdir -p dist/installers "$RUNNER_TEMP/xxtab-linux"
+          cp target/release/xxtab LICENSE "$RUNNER_TEMP/xxtab-linux/"
+          tar -C "$RUNNER_TEMP/xxtab-linux" -czf "dist/installers/xxtab-$version-linux-x64.tar.gz" xxtab LICENSE
+          cd dist/installers
+          sha256sum "xxtab-$version-linux-x64.tar.gz" > "xxtab-$version-linux-x64.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xxtab-linux-x64
+          if-no-files-found: error
+          path: |
+            dist/installers/*-linux-x64.tar.gz
+            dist/installers/*-linux-x64.tar.gz.sha256
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92.0
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: macos-${{ matrix.arch }}
+      - name: Verify native architecture and install system WireGuard
+        run: |
+          test "$(uname -m)" = '${{ matrix.arch }}'
+          brew install bash wireguard-tools wireguard-go
+      - run: cargo fmt --check
+      - run: cargo test --locked --all-targets
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Check real WireGuard and route cleanup
+        run: |
+          test_binary=$(cargo test --locked --lib --no-run --message-format=json | python3 -c 'import json,sys; rows=[json.loads(line) for line in sys.stdin]; print(next(v["executable"] for v in rows if v.get("executable") and v.get("profile", {}).get("test")))')
+          sudo env PATH="$PATH" "$test_binary" system::tests:: --ignored --test-threads=1
+      - name: Build AppKit app, smoke test, DMG and ZIP
+        env:
+          XXTAB_MACOS_LIFECYCLE_TEST: '1'
+        run: bash tools/build-macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xxtab-macos-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            dist/installers/*-macos-${{ matrix.arch }}.dmg
+            dist/installers/*-macos-${{ matrix.arch }}.dmg.sha256
+            dist/installers/*-macos-${{ matrix.arch }}.app.zip
+            dist/installers/*-macos-${{ matrix.arch }}.app.zip.sha256

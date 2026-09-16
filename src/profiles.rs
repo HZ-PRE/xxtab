@@ -26,6 +26,7 @@ pub struct Store {
     pub root: PathBuf,
     pub catalog: Catalog,
 }
+#[derive(Serialize, Deserialize)]
 pub struct Draft {
     pub name: String,
     pub tunnel: String,

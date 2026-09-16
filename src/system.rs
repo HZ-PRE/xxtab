@@ -13,6 +13,14 @@ fn output(program: &str, args: &[String]) -> Result<std::process::Output> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .stdin(Stdio::null());
+    #[cfg(target_os = "macos")]
+    cmd.env_clear()
+        .env(
+            "PATH",
+            "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        )
+        .env("HOME", "/var/root")
+        .env("LC_ALL", "C");
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -118,8 +126,34 @@ impl Route {
             add[2] = "del".into();
             Ok(Some(Self { delete: add }))
         }
-        #[cfg(not(any(windows, target_os = "linux")))]
-        bail!("managed mode supports only Windows and Linux")
+        #[cfg(target_os = "macos")]
+        {
+            let ip = ip.to_string();
+            let data = run("/sbin/route", &args(&["-n", "get", "-inet", &ip]))?;
+            let field = |key: &str| {
+                data.lines().find_map(|line| {
+                    let (name, value) = line.trim().split_once(':')?;
+                    (name == key).then(|| value.trim())
+                })
+            };
+            if field("destination") == Some(ip.as_str())
+                && field("flags").is_some_and(|v| v.split([',', '<', '>']).any(|f| f == "HOST"))
+            {
+                return Ok(None);
+            }
+            let mut add = args(&["-n", "add", "-host", &ip]);
+            if let Some(gateway) = field("gateway").and_then(|g| g.parse::<Ipv4Addr>().ok()) {
+                add.extend(args(&["-gateway", &gateway.to_string()]));
+            } else {
+                let interface = field("interface").context("missing outer route interface")?;
+                add.extend(args(&["-interface", interface]));
+            }
+            run("/sbin/route", &add)?;
+            add[1] = "delete".into();
+            Ok(Some(Self { delete: add }))
+        }
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+        bail!("managed mode supports Windows, Linux and macOS")
     }
     fn remove(&self) -> Result<()> {
         #[cfg(windows)]
@@ -130,6 +164,8 @@ impl Route {
         {
             run("ip", &self.delete)?;
         }
+        #[cfg(target_os = "macos")]
+        run("/sbin/route", &self.delete)?;
         Ok(())
     }
 }
@@ -145,12 +181,21 @@ pub struct Managed {
 }
 impl Managed {
     pub fn prepare(wg: &WireGuard, prepared: &Prepared) -> Result<Self> {
-        let lock = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(std::env::temp_dir().join(format!("xxtab-{}.lock", wg.name)))?;
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(target_os = "macos")]
+        let lock_root = {
+            use std::os::unix::fs::OpenOptionsExt;
+            ensure!(
+                unsafe { libc::geteuid() } == 0,
+                "WireGuard management requires administrator authorization"
+            );
+            options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+            PathBuf::from("/var/run")
+        };
+        #[cfg(not(target_os = "macos"))]
+        let lock_root = std::env::temp_dir();
+        let lock = options.open(lock_root.join(format!("xxtab-{}.lock", wg.name)))?;
         lock.try_lock()
             .context("another xxtab process manages this WireGuard name")?;
         #[cfg(windows)]
@@ -173,6 +218,13 @@ impl Managed {
                 "WireGuard interface already exists; choose another wireguard.name"
             );
         }
+        #[cfg(target_os = "macos")]
+        ensure!(
+            !Path::new("/var/run/wireguard")
+                .join(format!("{}.name", wg.name))
+                .exists(),
+            "WireGuard interface mapping already exists; choose another wireguard.name"
+        );
         let directory = tempfile::Builder::new().prefix("xxtab-").tempdir()?;
         #[cfg(unix)]
         {
@@ -252,7 +304,7 @@ impl Managed {
                 std::thread::sleep(Duration::from_millis(200));
             }
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             run(
                 &self.executable,
@@ -308,6 +360,18 @@ impl Managed {
                     )?;
                 }
             }
+            #[cfg(target_os = "macos")]
+            {
+                if Path::new("/var/run/wireguard")
+                    .join(format!("{}.name", self.name))
+                    .exists()
+                {
+                    run(
+                        &self.executable,
+                        &args(&["down", &self.config.to_string_lossy()]),
+                    )?;
+                }
+            }
             self.started = false;
         }
         if let Some(route) = &self.route {
@@ -336,6 +400,12 @@ fn default_executable() -> PathBuf {
     if cfg!(windows) {
         Path::new(&std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into()))
             .join("WireGuard/wireguard.exe")
+    } else if cfg!(target_os = "macos") {
+        ["/opt/homebrew/bin/wg-quick", "/usr/local/bin/wg-quick"]
+            .into_iter()
+            .map(PathBuf::from)
+            .find(|p| p.is_file())
+            .unwrap_or_else(|| PathBuf::from("/opt/homebrew/bin/wg-quick"))
     } else {
         PathBuf::from("wg-quick")
     }

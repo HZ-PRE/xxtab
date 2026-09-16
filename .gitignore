@@ -4,3 +4,5 @@
 *.log
 /xxtab.toml
 /wg.conf
+__pycache__/
+.DS_Store

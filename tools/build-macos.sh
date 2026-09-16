@@ -20,7 +20,7 @@ trap '[[ "$work" == "$repo/.tools/macos-build."* ]] && rm -rf -- "$work"' EXIT
 app="$work/image/xxtab.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$work/xxtab.iconset"
 cp "target/$target/release/xxtab" "$app/Contents/MacOS/xxtab"
-xcrun swiftc -O -swift-version 5 -target "$arch-apple-macosx13.0" -framework AppKit macos/Xxtab.swift -o "$app/Contents/MacOS/xxtab-macos"
+xcrun swiftc -O -parse-as-library -swift-version 5 -target "$arch-apple-macosx13.0" -framework AppKit macos/Xxtab.swift -o "$app/Contents/MacOS/xxtab-macos"
 cp packaging/macos/Info.plist "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $version" "$app/Contents/Info.plist"

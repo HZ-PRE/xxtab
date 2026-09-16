@@ -92,6 +92,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: macos-${{ matrix.arch }}
+      - name: Check AppKit Swift types
+        run: xcrun swiftc -typecheck -parse-as-library -swift-version 5 -target '${{ matrix.arch }}-apple-macosx13.0' -framework AppKit macos/Xxtab.swift
       - name: Verify native architecture and install system WireGuard
         run: |
           test "$(uname -m)" = '${{ matrix.arch }}'

@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Darwin
+import UniformTypeIdentifiers
 
 struct Draft: Codable {
     var name: String
@@ -194,7 +195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     func filePanel(wgOnly: Bool = false) -> URL? {
         let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
-        panel.allowedFileTypes = wgOnly ? ["conf"] : ["toml", "conf"]
+        panel.allowedContentTypes = (wgOnly ? ["conf"] : ["toml", "conf"]).compactMap { UTType(filenameExtension: $0) }
         return panel.runModal() == .OK ? panel.url : nil
     }
     func openEditor(_ draft: Draft, index: Int?, readOnly: Bool) {
@@ -307,27 +308,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationWillTerminate(_ notification: Notification) { timer?.invalidate(); if let item = statusItem { NSStatusBar.system.removeStatusItem(item) } }
 }
 
-let app = NSApplication.shared
-app.setActivationPolicy(.regular)
-let smoke = CommandLine.arguments.contains("--smoke-test")
-if !smoke, let identifier = Bundle.main.bundleIdentifier {
-    let other = NSRunningApplication.runningApplications(withBundleIdentifier: identifier).first { $0.processIdentifier != getpid() }
-    if let other = other { other.activate(options: [.activateAllWindows, .activateIgnoringOtherApps]); exit(0) }
+@main
+struct XxtabApp {
+    @MainActor
+    static func main() {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.regular)
+        let smoke = CommandLine.arguments.contains("--smoke-test")
+        if !smoke, let identifier = Bundle.main.bundleIdentifier {
+            let other = NSRunningApplication.runningApplications(withBundleIdentifier: identifier).first { $0.processIdentifier != getpid() }
+            if let other = other { other.activate(options: [.activateAllWindows, .activateIgnoringOtherApps]); exit(0) }
+        }
+        let smokeRoot = FileManager.default.temporaryDirectory.appendingPathComponent("xxtab-smoke-" + UUID().uuidString)
+        let delegate = AppDelegate(root: smoke ? smokeRoot : nil)
+        app.delegate = delegate
+        if smoke {
+            do {
+                defer { try? FileManager.default.removeItem(at: smokeRoot) }
+                delegate.buildUI(); try delegate.reloadProfiles()
+                let draft = try JSONDecoder().decode(Draft.self, from: delegate.bridge("template"))
+                precondition(draft.tunnel.contains("127.0.0.1:51820")); precondition(draft.wireguard.contains("Endpoint = 127.0.0.1:51820"))
+                delegate.openEditor(draft, index: nil, readOnly: true)
+                precondition(delegate.wgField.isEditable == false)
+                delegate.editor?.close()
+                print("PASS: native AppKit controls, profile bridge, templates, read-only viewer")
+                return
+            } catch { fputs("macOS smoke test failed: \(error.localizedDescription)\n", stderr); exit(1) }
+        }
+        // NSApplication's delegate is weak; retain it for the entire event loop.
+        withExtendedLifetime(delegate) { app.run() }
+    }
 }
-let smokeRoot = FileManager.default.temporaryDirectory.appendingPathComponent("xxtab-smoke-" + UUID().uuidString)
-let delegate = AppDelegate(root: smoke ? smokeRoot : nil)
-app.delegate = delegate
-if smoke {
-    do {
-        defer { try? FileManager.default.removeItem(at: smokeRoot) }
-        delegate.buildUI(); try delegate.reloadProfiles()
-        let draft = try JSONDecoder().decode(Draft.self, from: delegate.bridge("template"))
-        precondition(draft.tunnel.contains("127.0.0.1:51820")); precondition(draft.wireguard.contains("Endpoint = 127.0.0.1:51820"))
-        delegate.openEditor(draft, index: nil, readOnly: true)
-        precondition(delegate.wgField.isEditable == false)
-        delegate.editor?.close()
-        print("PASS: native AppKit controls, profile bridge, templates, read-only viewer")
-        exit(0)
-    } catch { fputs("macOS smoke test failed: \(error.localizedDescription)\n", stderr); exit(1) }
-}
-app.run()

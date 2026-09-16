@@ -184,9 +184,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusItem?.button?.toolTip = "xxtab · " + status.stringValue
     }
     @objc func selectProfile() { action { _ = try bridge("select", ["index": profiles.indexOfSelectedItem]) }; updateControls() }
-    @objc func showMain() { NSApp.activate(ignoringOtherApps: true); window.deminiaturize(nil); window.makeKeyAndOrderFront(nil); editor?.makeKeyAndOrderFront(nil) }
+    @objc func showMain() {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        window.deminiaturize(nil); window.makeKeyAndOrderFront(nil); editor?.makeKeyAndOrderFront(nil)
+    }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showMain(); return true }
-    func windowDidMiniaturize(_ notification: Notification) { if (notification.object as? NSWindow) === window { window.orderOut(nil) } }
+    func windowDidMiniaturize(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === window, statusItem?.isVisible == true else { return }
+        window.orderOut(nil); editor?.orderOut(nil)
+        // Keep the status menu and tunnel alive while removing the app from the Dock.
+        NSApp.setActivationPolicy(.accessory)
+    }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if sender === window { window.orderOut(nil); return false }
         if !editorReadOnly, let original = original {

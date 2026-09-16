@@ -2,8 +2,8 @@ name: Build, test and package
 
 on:
   push:
-  pull_request:
-  workflow_dispatch:
+    tags:
+      - 'v*'
 
 permissions:
   contents: read

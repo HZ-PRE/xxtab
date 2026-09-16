@@ -38,7 +38,7 @@ GUI 配置保存在 `%LOCALAPPDATA%\xxtab\profiles`，导入的原始文件不�
 
 macOS 提供原生 AppKit 界面和菜单栏控制，支持 Apple Silicon / Intel。安装、权限与打包见 [macOS 使用说明](docs/macos.md)。Linux 继续使用命令行，不构建或依赖图形界面。
 
-GitHub Actions 在 push / PR / 手动触发时自动生成 Windows 安装 EXE、两种架构的 macOS DMG / App ZIP、Linux CLI 包；推送与 Cargo.toml 版本一致的 `v版本号` 标签后，全部构建成功会自动发布 GitHub Release，供客户端检查更新。下载方法见 [CI 自动打包说明](docs/ci.md)。安装包仅包含运行组件和许可文件。
+GitHub Actions 仅在推送 `v*` 版本标签时构建，普通分支 push 和 PR 不触发。标签必须与 Cargo.toml 版本一致，例如 `git push origin v0.1.3`；Windows、两种架构的 macOS 和 Linux 全部构建成功后自动发布 GitHub Release，供客户端检查更新。下载方法见 [CI 自动打包说明](docs/ci.md)。安装包仅包含运行组件和许可文件。
 
 ## 快速开始
 

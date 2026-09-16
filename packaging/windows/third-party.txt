@@ -7,7 +7,10 @@ Original signed MSI: https://download.wireguard.com/windows-client/wireguard-amd
 SHA256: 76fcec042c5989c5b816cd32eaed1e5b1c3b998a4b1c9eca55f299e3314ef7e4
 
 The original MSI is bundled without modification and installed only if the
-standard WireGuard executable is absent. xxtab does not uninstall WireGuard.
+standard WireGuard executable and bundled MSI registration are absent. xxtab
+records dependencies it installs and removes the unchanged bundled MSI during
+uninstall, unless tunnel services or independent saved configurations remain.
+Pre-existing, replaced, or untracked WireGuard installations are preserved.
 
 Installer engine: Inno Setup, https://jrsoftware.org/isinfo.php
 Chinese translation: Inno Setup is-6_7_1,

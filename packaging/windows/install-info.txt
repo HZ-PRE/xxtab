@@ -11,4 +11,4 @@ xxtab — WireGuard + WebSocket 轻量客户端
 
 安装和运行需要管理员权限，用于管理 WireGuard 接口和路由。升级或卸载前，请先断开连接并正常退出客户端。
 
-用户配置保存在当前用户的 %LOCALAPPDATA%\xxtab\profiles。卸载 xxtab 会保留这些配置，也不会卸载系统 WireGuard。若使用其他管理员账号授权运行，配置属于该管理员账号。
+用户配置保存在当前用户的 %LOCALAPPDATA%\xxtab\profiles，卸载时保留。由新版 xxtab 首次安装且未更换的 WireGuard 会随应用卸载；原先已有、来源不明、仍有隧道服务或独立配置的 WireGuard 保留。旧版未记录依赖来源，遗留的 WireGuard 可在 Windows“已安装的应用”中手动卸载。若使用其他管理员账号授权运行，配置属于该管理员账号。

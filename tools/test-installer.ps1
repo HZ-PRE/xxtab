@@ -21,9 +21,16 @@ $testDir = Join-Path $repoRoot ('.tools/installer-smoke-' + [guid]::NewGuid().To
 $menu = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'xxtab Packaging Test'
 $desktopLink = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'xxtab Packaging Test.lnk'
 $regPath = 'HKLM:/SOFTWARE/Microsoft/Windows/CurrentVersion/Uninstall/xxtab-packaging-test-7983c12d_is1'
+$dependencyRoot = 'HKLM:\SOFTWARE\xxtab Packaging Test'
+if ((Test-Path -LiteralPath $dependencyRoot) -and
+    (@(Get-ChildItem -LiteralPath $dependencyRoot).Count -ne 0 -or
+     (Get-Item -LiteralPath $dependencyRoot).ValueCount -ne 0)) {
+    throw 'An earlier dependency test registry key exists; refusing to overwrite it.'
+}
 if ((Test-Path -LiteralPath $menu) -or (Test-Path -LiteralPath $desktopLink) -or (Test-Path -LiteralPath $regPath)) {
     throw 'An earlier packaging test installation exists; refusing to overwrite it.'
 }
+
 $wgHash = (Get-FileHash -LiteralPath $wireguard).Hash
 $uninstaller = Join-Path $testDir 'unins000.exe'
 $log = Join-Path $repoRoot '.tools/installer-smoke.log'
@@ -86,5 +93,74 @@ try {
     # Remove only an empty, explicitly created test directory (no recursion).
     if ((Test-Path -LiteralPath $testDir) -and -not (Get-ChildItem -LiteralPath $testDir -Force)) {
         Remove-Item -LiteralPath $testDir
+    }
+}
+
+# Exercise dependency ownership with the test installer's compile-time MSI stub.
+# This never installs/uninstalls WireGuard or changes real tunnel services.
+$dependencyKey = "$dependencyRoot\Dependencies\WireGuard"
+$servicesKey = "$dependencyRoot\TestServices"
+$productCode = '{2FDB79CE-5193-4A39-82BB-E00158CC1533}'
+$receipt = "$testDir.dependency-uninstalled.txt"
+foreach ($scenario in 'owned', 'changed-hash', 'foreign-product', 'other-tunnel', 'query-failed', 'msi-failed', 'reboot') {
+    try {
+        if ((Run-Setup) -ne 0) { throw "Installation failed for dependency test: $scenario" }
+        New-Item -Path $dependencyKey -Force | Out-Null
+        New-Item -Path $servicesKey -Force | Out-Null
+        New-ItemProperty -LiteralPath $dependencyKey -Name ProductCode -Value $productCode -PropertyType String -Force | Out-Null
+        New-ItemProperty -LiteralPath $dependencyKey -Name ExecutableSHA256 -Value $wgHash -PropertyType String -Force | Out-Null
+        switch ($scenario) {
+            'changed-hash' { Set-ItemProperty -LiteralPath $dependencyKey -Name ExecutableSHA256 -Value ('0' * 64) }
+            'foreign-product' { Set-ItemProperty -LiteralPath $dependencyKey -Name ProductCode -Value '{00000000-0000-0000-0000-000000000000}' }
+            'other-tunnel' { New-Item -Path ($servicesKey + '\WireGuardTunnel$another_client') -Force | Out-Null }
+            'query-failed' { Remove-Item -LiteralPath $servicesKey }
+        }
+        if ($scenario -eq 'owned') {
+            if ((Run-Setup) -ne 0) { throw 'Upgrade failed in dependency ownership test.' }
+            if ((Get-ItemProperty -LiteralPath $dependencyKey).ExecutableSHA256 -ne $wgHash) {
+                throw 'Upgrade lost dependency ownership.'
+            }
+        }
+        $msiCode = switch ($scenario) { 'msi-failed' { 1603 }; 'reboot' { 3010 }; default { 0 } }
+        $uninstallLog = Join-Path $repoRoot ".tools/installer-dependency-$scenario.log"
+        $process = Start-Process -FilePath $uninstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TESTMSICODE=$msiCode /LOG=`"$uninstallLog`"" -WindowStyle Hidden -Wait -PassThru
+        if ($process.ExitCode -ne 0) { throw "Application uninstall failed in scenario $scenario" }
+        $expectedAttempt = $scenario -in @('owned', 'msi-failed', 'reboot')
+        if ((Test-Path -LiteralPath $receipt) -ne $expectedAttempt) {
+            throw "Wrong dependency uninstall decision: $scenario"
+        }
+        if ((Test-Path -LiteralPath $dependencyKey) -ne ($scenario -eq 'msi-failed')) {
+            throw "Wrong ownership cleanup decision: $scenario"
+        }
+        if ($scenario -eq 'reboot' -and
+            -not (Select-String -LiteralPath $uninstallLog -SimpleMatch 'Need to restart Windows? Yes' -Quiet)) {
+            throw 'Dependency restart requirement was not propagated to the uninstaller.'
+        }
+        if ((Get-FileHash -LiteralPath $wireguard).Hash -ne $wgHash) {
+            throw 'Synthetic dependency tests modified system WireGuard.'
+        }
+        Write-Output "PASS: dependency uninstall $scenario"
+    } finally {
+        if (Test-Path -LiteralPath $uninstaller) {
+            Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -WindowStyle Hidden -Wait | Out-Null
+        }
+        if (Test-Path -LiteralPath $dependencyRoot) {
+            $resolvedKey = (Get-Item -LiteralPath $dependencyRoot).Name
+            if ($resolvedKey -ne 'HKEY_LOCAL_MACHINE\SOFTWARE\xxtab Packaging Test') {
+                throw "Unexpected registry test cleanup target: $resolvedKey"
+            }
+            # Only remove the exact fixture keys, from leaves to root.
+            foreach ($key in @(($servicesKey + '\WireGuardTunnel$another_client'), $dependencyKey, $servicesKey, "$dependencyRoot\Dependencies")) {
+                if (Test-Path -LiteralPath $key) {
+                    if (@(Get-ChildItem -LiteralPath $key).Count -ne 0) { throw "Unexpected nested test key: $key" }
+                    Remove-Item -LiteralPath $key
+                }
+            }
+            # Keep the empty test namespace; no forced registry cleanup is needed.
+        }
+        if (Test-Path -LiteralPath $receipt) { Remove-Item -LiteralPath $receipt }
+        if ((Test-Path -LiteralPath $testDir) -and -not (Get-ChildItem -LiteralPath $testDir -Force)) {
+            Remove-Item -LiteralPath $testDir
+        }
     }
 }

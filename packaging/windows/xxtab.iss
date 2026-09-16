@@ -47,17 +47,11 @@ Name: "zhcn"; MessagesFile: "ChineseSimplified.isl"
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "快捷方式："
 
 [Files]
-; Explicit allowlist: never package dist backups or local/user configurations.
+; Explicit allowlist: exclude docs, dist backups and local/user configurations.
 Source: "{#BinaryDir}xxtab-gui.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BinaryDir}xxtab.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoRoot}LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoRoot}README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#RepoRoot}docs\*.png"; DestDir: "{app}\docs"; Flags: ignoreversion
-Source: "{#RepoRoot}docs\performance.md"; DestDir: "{app}\docs"; Flags: ignoreversion
-Source: "{#RepoRoot}docs\performance-results.json"; DestDir: "{app}\docs"; Flags: ignoreversion
-Source: "{#RepoRoot}docs\windows-installer.md"; DestDir: "{app}\docs"; Flags: ignoreversion
-Source: "{#RepoRoot}docs\cdn-latency.md"; DestDir: "{app}\docs"; Flags: ignoreversion
-Source: "{#RepoRoot}docs\lan-results.json"; DestDir: "{app}\docs"; Flags: ignoreversion
 Source: "{#RepoRoot}tools\diagnose-network.ps1"; DestDir: "{app}\tools"; Flags: ignoreversion
 Source: "{#RepoRoot}deploy\nginx-xxtab.conf.example"; DestDir: "{app}\examples"; Flags: onlyifdoesntexist
 Source: "{#RepoRoot}examples\xxtab.toml"; DestDir: "{app}\examples"; Flags: onlyifdoesntexist

@@ -26,8 +26,9 @@ jobs:
           import os, pathlib, re
           text = pathlib.Path('Cargo.toml').read_text()
           version = re.search(r'^version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"', text, re.M).group(1)
-          if os.environ['RELEASE_TAG'] != 'v' + version:
-              raise SystemExit('Release tag must exactly match v<Cargo.toml version>')
+          tag = os.environ['RELEASE_TAG']
+          if tag != 'v' + version:
+              raise SystemExit(f'Release tag {tag} does not match Cargo.toml version {version} (expected v{version}). Commit the version and Cargo.lock changes before creating a new matching tag.')
           PY
   windows:
     needs: release-version

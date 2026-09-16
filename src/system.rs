@@ -7,6 +7,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(windows)]
+mod windows;
+
 fn output(program: &str, args: &[String]) -> Result<std::process::Output> {
     let mut cmd = Command::new(program);
     cmd.args(args)
@@ -199,16 +202,7 @@ impl Managed {
         lock.try_lock()
             .context("another xxtab process manages this WireGuard name")?;
         #[cfg(windows)]
-        {
-            let o = output(
-                "sc.exe",
-                &args(&["query", &format!("WireGuardTunnel${}", wg.name)]),
-            )?;
-            ensure!(
-                o.status.code() == Some(1060),
-                "WireGuard service exists or cannot be queried; choose another wireguard.name"
-            );
-        }
+        windows::recover(&lock, wg)?;
         #[cfg(target_os = "linux")]
         {
             ensure!(
@@ -280,6 +274,8 @@ impl Managed {
         })
     }
     pub fn start(&mut self, server: Ipv4Addr) -> Result<()> {
+        #[cfg(windows)]
+        windows::record(&self._lock, &self.config, &self.executable)?;
         self.route = Route::install(server).context("cannot install server bypass route")?;
         self.started = true; // partial startup must also be rolled back
         #[cfg(windows)]
@@ -322,30 +318,8 @@ impl Managed {
         if self.started {
             #[cfg(windows)]
             {
-                let present = output(
-                    "sc.exe",
-                    &args(&["query", &format!("WireGuardTunnel${}", self.name)]),
-                )?;
-                if present.status.code() != Some(1060) {
-                    run(
-                        &self.executable,
-                        &args(&["/uninstalltunnelservice", &self.name]),
-                    )?;
-                    let deadline = Instant::now() + Duration::from_secs(15);
-                    loop {
-                        let o = output(
-                            "sc.exe",
-                            &args(&["query", &format!("WireGuardTunnel${}", self.name)]),
-                        )?;
-                        if o.status.code() == Some(1060) {
-                            break;
-                        }
-                        ensure!(
-                            Instant::now() < deadline,
-                            "WireGuard service still exists after uninstall"
-                        );
-                        std::thread::sleep(Duration::from_millis(200));
-                    }
+                if windows::service_exists(&self.name)? {
+                    windows::uninstall(&self.executable, &self.name)?;
                 }
             }
             #[cfg(target_os = "linux")]
@@ -380,6 +354,8 @@ impl Managed {
                 .context("cannot remove server bypass route")?;
         }
         self.route = None;
+        #[cfg(windows)]
+        self._lock.set_len(0)?;
         Ok(())
     }
 }
@@ -415,6 +391,78 @@ fn default_executable() -> PathBuf {
 mod tests {
     use super::*;
     use base64::{Engine, engine::general_purpose::STANDARD};
+
+    #[test]
+    #[cfg(windows)]
+    #[ignore = "requires admin and installed WireGuard; simulates process exit with an isolated tunnel"]
+    fn windows_recovers_abandoned_session() {
+        let input = format!(
+            "[Interface]\nPrivateKey = {}\nAddress = 10.254.252.1/32\n[Peer]\nPublicKey = {}\nAllowedIPs = 10.254.252.2/32\n",
+            STANDARD.encode([1; 32]),
+            STANDARD.encode([2; 32])
+        );
+        let prepared =
+            crate::wgconfig::prepare(&input, "127.0.0.1:51893".parse().unwrap(), 1280).unwrap();
+        let wg = WireGuard {
+            config: PathBuf::new(),
+            name: "xxtabrecover".into(),
+            executable: None,
+            mtu: 1280,
+        };
+        if std::env::var_os("XXTAB_RECOVERY_TEST_CHILD").is_some() {
+            let mut managed = Managed::prepare(&wg, &prepared).unwrap();
+            managed.start(Ipv4Addr::LOCALHOST).unwrap();
+            // Model forced termination: no destructors, OS releases the lock.
+            std::process::exit(0);
+        }
+        assert!(
+            !windows::service_exists(&wg.name).unwrap(),
+            "test service already exists"
+        );
+        struct Cleanup;
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                if windows::service_exists("xxtabrecover").unwrap_or(false) {
+                    let _ =
+                        windows::uninstall(&default_executable().to_string_lossy(), "xxtabrecover");
+                }
+            }
+        }
+        let _cleanup = Cleanup;
+        let child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "system::tests::windows_recovers_abandoned_session",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("XXTAB_RECOVERY_TEST_CHILD", "1")
+            .output()
+            .unwrap();
+        assert!(
+            child.status.success(),
+            "child failed: {}",
+            String::from_utf8_lossy(&child.stderr)
+        );
+        assert!(windows::service_exists(&wg.name).unwrap());
+        let journal = std::env::temp_dir().join("xxtab-xxtabrecover.lock");
+        let record = std::fs::read(&journal).unwrap();
+        let info: serde_json::Value = serde_json::from_slice(&record).unwrap();
+        let old_config = PathBuf::from(info["config"].as_str().unwrap());
+        // No provenance: never remove a service merely because its name matches.
+        std::fs::write(&journal, b"").unwrap();
+        assert!(Managed::prepare(&wg, &prepared).is_err());
+        assert!(windows::service_exists(&wg.name).unwrap());
+        std::fs::write(&journal, record).unwrap();
+        let mut recovered = Managed::prepare(&wg, &prepared).unwrap();
+        assert!(!windows::service_exists(&wg.name).unwrap());
+        assert!(!old_config.exists());
+        recovered.start(Ipv4Addr::LOCALHOST).unwrap();
+        recovered.stop().unwrap();
+        drop(recovered);
+        assert!(!windows::service_exists(&wg.name).unwrap());
+        assert!(std::fs::read(journal).unwrap().is_empty());
+    }
 
     #[test]
     #[ignore = "requires admin/root and installed WireGuard; creates and removes an isolated test interface"]

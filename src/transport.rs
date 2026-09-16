@@ -262,6 +262,8 @@ pub async fn connect(cfg: &Config, address: SocketAddr, tls: Connector) -> Resul
             .await
             .context("TCP connection failed")?;
         tcp.set_nodelay(true)?;
+        // These socket options are platform-specific; packet priority works on all platforms.
+        #[cfg(any(windows, target_os = "linux"))]
         if cfg.transport.latency_mode == LatencyMode::Interactive {
             let socket = socket2::SockRef::from(&tcp);
             #[cfg(target_os = "linux")]

@@ -1,7 +1,7 @@
 """macOS CI only: actual WG interface, explicit stop and GUI-heartbeat loss.
 
 Uses a local WebSocket sink and synthetic keys; no user profiles or remote VPN.
-Requires existing Homebrew dependencies and noninteractive sudo on the runner.
+Requires bundled app dependencies and noninteractive sudo on the runner.
 """
 import base64
 import hashlib

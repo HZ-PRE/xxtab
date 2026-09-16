@@ -104,7 +104,7 @@ jobs:
           - os: macos-15-intel
             arch: x86_64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.92.0
@@ -113,19 +113,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: macos-${{ matrix.arch }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.8'
+          cache: false
       - name: Check AppKit Swift types
         run: xcrun swiftc -typecheck -parse-as-library -swift-version 5 -target '${{ matrix.arch }}-apple-macosx13.0' -framework AppKit macos/Xxtab.swift
-      - name: Verify native architecture and install system WireGuard
-        run: |
-          test "$(uname -m)" = '${{ matrix.arch }}'
-          brew install bash wireguard-tools wireguard-go
+      - name: Verify native architecture
+        run: test "$(uname -m)" = '${{ matrix.arch }}'
       - run: cargo fmt --check
       - run: cargo test --locked --all-targets
       - run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Check real WireGuard and route cleanup
-        run: |
-          test_binary=$(cargo test --locked --lib --no-run --message-format=json | python3 -c 'import json,sys; rows=[json.loads(line) for line in sys.stdin]; print(next(v["executable"] for v in rows if v.get("executable") and v.get("profile", {}).get("test")))')
-          sudo env PATH="$PATH" "$test_binary" system::tests:: --ignored --test-threads=1
       - name: Build AppKit app, smoke test, DMG and ZIP
         env:
           XXTAB_MACOS_LIFECYCLE_TEST: '1'
@@ -139,6 +140,8 @@ jobs:
             dist/installers/*-macos-${{ matrix.arch }}.dmg.sha256
             dist/installers/*-macos-${{ matrix.arch }}.app.zip
             dist/installers/*-macos-${{ matrix.arch }}.app.zip.sha256
+            dist/installers/*-macos-${{ matrix.arch }}-dependency-sources.tar.gz
+            dist/installers/*-macos-${{ matrix.arch }}-dependency-sources.tar.gz.sha256
 
   release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.repository == 'HZ-PRE/xxtab'
@@ -162,7 +165,7 @@ jobs:
           set -euo pipefail
           version="${RELEASE_TAG#v}"
           cd packages
-          for suffix in windows-x64-setup.exe linux-x64.tar.gz macos-arm64.dmg macos-arm64.app.zip macos-x86_64.dmg macos-x86_64.app.zip; do
+          for suffix in windows-x64-setup.exe linux-x64.tar.gz macos-arm64.dmg macos-arm64.app.zip macos-x86_64.dmg macos-x86_64.app.zip macos-arm64-dependency-sources.tar.gz macos-x86_64-dependency-sources.tar.gz; do
             file="xxtab-$version-$suffix"
             test -s "$file"
             test -s "$file.sha256"

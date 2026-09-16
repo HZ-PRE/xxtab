@@ -11,7 +11,7 @@
 | xxtab-macos-x86_64 | Intel DMG、App ZIP 与 SHA256 |
 | xxtab-linux-x64 | Linux CLI tar.gz（程序与 LICENSE）及 SHA256 |
 
-版本号来自 Cargo.toml。Windows 保留官方 WireGuard 离线安装依赖；Mac 使用系统 Homebrew WireGuard。所有产物排除 docs、README、示例、诊断脚本和用户配置。
+版本号来自 Cargo.toml。Windows 保留官方 WireGuard 离线安装依赖；Mac 从固定源码编译并内置 Bash、wg、wg-quick、wireguard-go。安装包排除 docs、README、示例、诊断脚本和用户配置。Mac 额外上传独立的 `dependency-sources.tar.gz` 及 SHA256，提供第三方对应源码和构建方法；发布任务验证它们齐全后才公开 Release。
 
 Windows/Linux 执行 Rust 测试、rustfmt 和 Clippy。Mac 分别在 `macos-15`（arm64）和 `macos-15-intel` 上编译，额外测试系统路由和真实 WireGuard 接口清理、原生 AppKit 控件、显式停止及失去 GUI 心跳后的清理。失败时不会上传对应平台产物。
 

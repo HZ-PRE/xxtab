@@ -1,8 +1,10 @@
 use crate::{config::WireGuard, wgconfig::Prepared};
 use anyhow::{Context, Result, bail, ensure};
+#[cfg(any(windows, target_os = "macos"))]
+use std::path::Path;
 use std::{
     net::Ipv4Addr,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::{Command, Stdio},
     time::{Duration, Instant},
 };
@@ -18,10 +20,7 @@ fn output(program: &str, args: &[String]) -> Result<std::process::Output> {
         .stdin(Stdio::null());
     #[cfg(target_os = "macos")]
     cmd.env_clear()
-        .env(
-            "PATH",
-            "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-        )
+        .env("PATH", crate::macos::command_path()?)
         .env("HOME", "/var/root")
         .env("LC_ALL", "C");
     #[cfg(windows)]
@@ -373,16 +372,17 @@ impl Drop for Managed {
     }
 }
 fn default_executable() -> PathBuf {
-    if cfg!(windows) {
+    #[cfg(windows)]
+    {
         Path::new(&std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into()))
             .join("WireGuard/wireguard.exe")
-    } else if cfg!(target_os = "macos") {
-        ["/opt/homebrew/bin/wg-quick", "/usr/local/bin/wg-quick"]
-            .into_iter()
-            .map(PathBuf::from)
-            .find(|p| p.is_file())
-            .unwrap_or_else(|| PathBuf::from("/opt/homebrew/bin/wg-quick"))
-    } else {
+    }
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::wireguard_executable().unwrap_or_else(|| PathBuf::from("wg-quick"))
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
         PathBuf::from("wg-quick")
     }
 }

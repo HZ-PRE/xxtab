@@ -5,7 +5,7 @@
 ## 使用
 
 - Windows：菜单“检查更新” → 确认下载 → SHA256 校验完成后确认安装。客户端先断开 WireGuard、清理路由并退出，临时更新器等待旧进程结束，再打开安装向导，沿用当前程序目录。向导中完成安装；配置保留在原来的 LocalAppData 目录。若清理失败则取消安装。便携运行时需同时保留 GUI 和同目录的 CLI。
-- macOS：应用菜单“检查更新…” → 下载本机架构的 DMG → 确认断开并退出、打开安装包 → 拖入 Applications 替换旧版。此流程不自动覆盖 .app；配置保留在原来的 Application Support 目录。已有的签名、公证和 Homebrew 依赖要求不变。
+- macOS：应用菜单“检查更新…” → 下载本机架构的 DMG → 确认断开并退出、打开安装包 → 拖入 Applications 替换旧版。此流程不自动覆盖 .app；配置保留在原来的 Application Support 目录。依赖随 App 一起更新，无需 Homebrew；签名和公证要求不变。
 - Linux：`xxtab update check` 检查版本；`xxtab update download` 下载并校验最新包，输出 JSON（含文件路径和 SHA256）。正常停止旧进程后解压替换 CLI。也可用 `xxtab update download 0.1.3` 要求版本与检查时一致，防止下载期间 Latest 发生变化。
 
 检查和下载按需运行，不启动常驻更新服务、不定时轮询，不在检查时断开现有连接。下载在后台流式写入临时目录，最多 256 MiB；SHA256 不符、大小不符或超时则拒绝更新并清理未完成的下载。完成的包位于系统临时目录的 `xxtab-update-*`，选择稍后安装时保留，可手动删除。Windows 安装前会再校验一次并限制文件写入。
@@ -15,12 +15,12 @@
 ## 发布新版本
 
 1. 修改 Cargo.toml 中的版本号，运行 `cargo check` 同步 Cargo.lock，并提交修改。
-2. 推送代码以及与版本一致的标签，例如本次 `0.1.2`：
+2. 推送代码以及与版本一致的标签，例如本次 `0.1.3`：
 
 ```sh
 git push
-git tag v0.1.2
-git push origin v0.1.2
+git tag v0.1.3
+git push origin v0.1.3
 ```
 
 3. 等待 GitHub Actions 的 Windows、Linux、Apple Silicon 和 Intel Mac 构建全部成功。发布任务会验证产物 SHA256，再公开 Release，客户端此时才能发现更新。

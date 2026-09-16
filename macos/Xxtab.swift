@@ -293,7 +293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard process == nil && !closing && editor == nil else { return }
         action {
             let dependencies = try JSONSerialization.jsonObject(with: bridge("dependencies")) as? [String: Any]
-            guard (dependencies?["ready"] as? Bool) == true else { throw AppError.message("请先在终端安装系统 WireGuard 依赖：\nbrew install bash wireguard-tools wireguard-go") }
+            guard (dependencies?["ready"] as? Bool) == true else { throw AppError.message("应用内的 WireGuard 运行组件缺失或无法执行。\n请从 GitHub Release 重新下载对应架构的完整 xxtab.app 并替换旧版。") }
             let draft = try selectedDraft(); _ = try bridge("select", ["index": profiles.indexOfSelectedItem])
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("xxtab-session-" + UUID().uuidString, isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])

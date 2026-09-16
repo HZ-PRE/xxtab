@@ -22,15 +22,55 @@ use std::{
     time::{Duration, Instant},
 };
 
-fn dependency_root() -> Option<PathBuf> {
+fn complete_dependencies(root: &Path) -> bool {
+    let quick = quick_path(root);
+    [
+        root.join("bash"),
+        root.join("wg"),
+        root.join("wireguard-go"),
+        quick.clone(),
+    ]
+    .iter()
+    .all(|path| {
+        std::fs::metadata(path).is_ok_and(|meta| meta.is_file() && meta.mode() & 0o111 != 0)
+    }) && (quick.parent() == Some(root) || quick.with_file_name("wg-quick.bash").is_file())
+}
+fn quick_path(root: &Path) -> PathBuf {
+    if root.ends_with("Contents/Helpers") {
+        root.parent().unwrap().join("Resources/wireguard/wg-quick")
+    } else {
+        root.join("wg-quick")
+    }
+}
+pub(crate) fn wireguard_executable() -> Option<PathBuf> {
+    dependency_root().map(|root| quick_path(&root))
+}
+fn bundled_root(executable: &Path) -> Option<PathBuf> {
+    let bin = executable.parent()?;
+    let contents = bin.parent()?;
+    (bin.file_name()? == "MacOS" && contents.file_name()? == "Contents")
+        .then(|| contents.join("Helpers"))
+}
+pub(crate) fn dependency_root() -> Option<PathBuf> {
+    if let Some(root) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| bundled_root(&exe))
+    {
+        // A damaged app must not silently pass CI or run a different Homebrew binary.
+        return complete_dependencies(&root).then_some(root);
+    }
     ["/opt/homebrew/bin", "/usr/local/bin"]
         .into_iter()
         .map(PathBuf::from)
-        .find(|root| {
-            ["bash", "wg-quick", "wg", "wireguard-go"]
-                .iter()
-                .all(|name| root.join(name).is_file())
-        })
+        .find(|root| complete_dependencies(root))
+}
+pub(crate) fn command_path() -> Result<std::ffi::OsString> {
+    let paths = dependency_root().into_iter().chain(
+        ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+            .into_iter()
+            .map(PathBuf::from),
+    );
+    std::env::join_paths(paths).context("application path cannot contain a colon")
 }
 pub fn dependencies_ready() -> bool {
     dependency_root().is_some()
@@ -177,7 +217,7 @@ async fn run_session(
     output: &mut Snapshots,
 ) -> Result<()> {
     let bin = dependency_root()
-        .context("Install dependencies first: brew install bash wireguard-tools wireguard-go")?;
+        .context("WireGuard dependencies unavailable; reinstall the complete xxtab.app (source CLI: brew install bash wireguard-tools wireguard-go)")?;
     let draft: Draft = serde_json::from_slice(&directory.read("request.json")?)
         .map_err(|_| anyhow::anyhow!("invalid session request"))?;
     let mut heartbeat = directory.read("heartbeat")?;
@@ -201,7 +241,7 @@ async fn run_session(
     wg.insert("name".into(), toml::Value::String(format!("xxm{uid}")));
     wg.insert(
         "executable".into(),
-        toml::Value::String(bin.join("wg-quick").to_string_lossy().into()),
+        toml::Value::String(quick_path(&bin).to_string_lossy().into()),
     );
     let config_path = private.path().join("xxtab.toml");
     write_private(&config_path, toml::to_string(&config)?.as_bytes())?;
@@ -247,6 +287,36 @@ async fn run_session(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn resolves_relocated_app_dependencies_and_checks_execute_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let contents = temp.path().join("Moved App With Spaces.app/Contents");
+        let root = contents.join("Helpers");
+        assert_eq!(
+            bundled_root(&contents.join("MacOS/xxtab")),
+            Some(root.clone())
+        );
+        assert!(bundled_root(&temp.path().join("xxtab")).is_none());
+        std::fs::create_dir_all(&root).unwrap();
+        for path in [
+            root.join("bash"),
+            root.join("wg"),
+            root.join("wireguard-go"),
+            quick_path(&root),
+            quick_path(&root).with_file_name("wg-quick.bash"),
+        ] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, b"test").unwrap();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert!(complete_dependencies(&root));
+        std::fs::set_permissions(root.join("bash"), std::fs::Permissions::from_mode(0o644))
+            .unwrap();
+        assert!(!complete_dependencies(&root));
+        std::fs::remove_file(root.join("wg")).unwrap();
+        assert!(!complete_dependencies(&root));
+    }
     #[test]
     fn rejects_symlinks_and_unprotected_input() {
         use std::os::unix::fs::{PermissionsExt, symlink};

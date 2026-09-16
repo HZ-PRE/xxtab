@@ -2,3 +2,6 @@
 *.swift text eol=lf
 *.yml text eol=lf
 *.plist text eol=lf
+*.py text eol=lf
+packaging/macos/dependencies.json text eol=lf
+packaging/macos/wg-quick text eol=lf

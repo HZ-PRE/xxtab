@@ -10,11 +10,11 @@
                        WireGuard 服务端
 ```
 
-WireGuard 加密由系统实现执行；xxtab 不解密 VPN 报文。客户端不用另起 wstunnel-cli 进程，也不包含浏览器、连接池或用户态 WireGuard 协议栈。Windows 提供独立的轻量原生界面 `xxtab-gui.exe`，界面与转发核心在同一个进程内运行。仍需安装系统 WireGuard。当前兼容性基线为官方 **wstunnel v10.7.1 的默认 WebSocket 模式**。
+WireGuard 加密由专用 WireGuard 实现执行；xxtab 不解密 VPN 报文。客户端不用另起 wstunnel-cli 进程，也不包含浏览器或连接池。Windows 提供独立的轻量原生界面 `xxtab-gui.exe`，界面与转发核心在同一个进程内运行，使用系统 WireGuard；macOS App 内置 wireguard-go、wg、wg-quick 和 Bash，用户无需安装 Homebrew。当前兼容性基线为官方 **wstunnel v10.7.1 的默认 WebSocket 模式**。
 
 ## Windows 可视化界面
 
-Windows 安装包位于 `dist/installers/xxtab-0.1.2-windows-x64-setup.exe`，支持 Windows 10 1809+ / Windows 11 x64。中文向导会安装界面和命令行程序、创建快捷方式；本机缺少 WireGuard 时从包内安装官方版本，已有版本保留。卸载保留用户配置和系统 WireGuard。安装包中的程序静态链接 C 运行库，无需另装 Visual C++ 运行库。打包及验证方法见 [Windows 安装包说明](docs/windows-installer.md)。
+Windows 安装包位于 `dist/installers/xxtab-0.1.3-windows-x64-setup.exe`，支持 Windows 10 1809+ / Windows 11 x64。中文向导会安装界面和命令行程序、创建快捷方式；本机缺少 WireGuard 时从包内安装官方版本，已有版本保留。卸载保留用户配置和系统 WireGuard。安装包中的程序静态链接 C 运行库，无需另装 Visual C++ 运行库。打包及验证方法见 [Windows 安装包说明](docs/windows-installer.md)。
 
 直接双击 `dist/windows-x64/xxtab-gui.exe`。系统会要求管理员权限，用于启停 WireGuard 和维护路由；不需要额外运行命令行客户端。
 

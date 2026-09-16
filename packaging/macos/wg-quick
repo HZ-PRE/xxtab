@@ -1,0 +1,11 @@
+#!/bin/sh
+# xxtab launcher; upstream wg-quick.bash is shipped unchanged beside this file.
+set -eu
+scripts=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+bin=$(CDPATH= cd -- "$scripts/../../Helpers" && pwd -P)
+PATH="$bin:/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH
+WG_QUICK_USERSPACE_IMPLEMENTATION="$bin/wireguard-go"
+export WG_QUICK_USERSPACE_IMPLEMENTATION
+unset BASH_ENV ENV CDPATH
+exec "$bin/bash" --noprofile --norc "$scripts/wg-quick.bash" "$@"

@@ -20,6 +20,9 @@ trap '[[ "$work" == "$repo/.tools/macos-build."* ]] && rm -rf -- "$work"' EXIT
 app="$work/image/xxtab.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$work/xxtab.iconset"
 cp "target/$target/release/xxtab" "$app/Contents/MacOS/xxtab"
+base="$repo/dist/installers/xxtab-$version-macos-$arch"
+sources="$base-dependency-sources.tar.gz"
+python3 tools/build-macos-deps.py "$app" "$sources"
 xcrun swiftc -O -parse-as-library -swift-version 5 -target "$arch-apple-macosx13.0" -framework AppKit macos/Xxtab.swift -o "$app/Contents/MacOS/xxtab-macos"
 cp packaging/macos/Info.plist "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$app/Contents/Info.plist"
@@ -35,15 +38,19 @@ iconutil -c icns "$work/xxtab.iconset" -o "$app/Contents/Resources/xxtab.icns"
 identity="${MACOS_SIGNING_IDENTITY:--}"
 sign_args=(--force --sign "$identity")
 if [[ "$identity" != - ]]; then sign_args+=(--options runtime --timestamp); fi
+for binary in bash wg wireguard-go; do
+  codesign "${sign_args[@]}" "$app/Contents/Helpers/$binary"
+done
 codesign "${sign_args[@]}" "$app/Contents/MacOS/xxtab"
 codesign "${sign_args[@]}" "$app"
 codesign --verify --deep --strict "$app"
-"$app/Contents/MacOS/xxtab-macos" --smoke-test
+env PATH=/usr/bin:/bin:/usr/sbin:/sbin "$app/Contents/MacOS/xxtab-macos" --smoke-test
+test_binary=""
 if [[ "${XXTAB_MACOS_LIFECYCLE_TEST:-0}" == 1 ]]; then
-  python3 tests/macos_session.py "$app/Contents/MacOS/xxtab"
+  test_binary=$(cargo test --locked --lib --no-run --message-format=json | python3 -c 'import json,sys; rows=[json.loads(line) for line in sys.stdin]; print(next(v["executable"] for v in rows if v.get("executable") and v.get("profile", {}).get("test")))')
 fi
+python3 tests/macos_bundle.py "$app" "$arch" "$test_binary"
 ln -s /Applications "$work/image/Applications"
-base="$repo/dist/installers/xxtab-$version-macos-$arch"
 hdiutil create -ov -volname xxtab -srcfolder "$work/image" -format UDZO "$base.dmg"
 if [[ -n "${MACOS_NOTARY_PROFILE:-}" ]]; then
   [[ "$identity" != - ]] || { echo 'Notarization requires a Developer ID signing identity.' >&2; exit 1; }
@@ -52,7 +59,7 @@ if [[ -n "${MACOS_NOTARY_PROFILE:-}" ]]; then
   xcrun stapler staple "$app"
 fi
 ditto -c -k --sequesterRsrc --keepParent "$app" "$base.app.zip"
-for package in "$base.dmg" "$base.app.zip"; do
+for package in "$base.dmg" "$base.app.zip" "$sources"; do
   (cd "$(dirname "$package")"; shasum -a 256 "$(basename "$package")") > "$package.sha256"
 done
 echo "Built: $base.dmg"

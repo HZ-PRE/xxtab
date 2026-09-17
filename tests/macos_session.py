@@ -1,4 +1,4 @@
-"""macOS CI only: actual WG interface, explicit stop and GUI-heartbeat loss.
+"""macOS CI only: WG interface survives a frozen GUI, and cleans up on exit.
 
 Uses a local WebSocket sink and synthetic keys; no user profiles or remote VPN.
 Requires bundled app dependencies and noninteractive sudo on the runner.
@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 import os
+import signal
 from pathlib import Path
 import socket
 import subprocess
@@ -63,29 +64,48 @@ def exercise(binary, orphan):
         key = base64.b64encode(bytes([1]) * 32).decode()
         draft = dict(name="CI", tunnel=f"server='ws://127.0.0.1:{listener.getsockname()[1]}'\nlisten='127.0.0.1:{port}'\n[wireguard]\nconfig='wg.conf'\n", wireguard=f"[Interface]\nPrivateKey={key}\nAddress=10.254.251.1/32\n[Peer]\nPublicKey={key}\nAllowedIPs=10.254.251.2/32\n")
         private_write(directory / "request.json", json.dumps(draft).encode())
-        private_write(directory / "heartbeat", b"start")
+        private_write(directory / "owner.lock", b"")
+        owner = subprocess.Popen([
+            sys.executable, "-c",
+            "import fcntl, sys; f=open(sys.argv[1], 'r+b'); fcntl.flock(f, fcntl.LOCK_EX); print('ready', flush=True); sys.stdin.read()",
+            str(directory / "owner.lock"),
+        ], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        assert owner.stdout.readline().strip() == b"ready"
         worker = subprocess.Popen(["sudo", "-n", str(binary), "macos-session", str(directory), str(os.getuid())], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         try:
             deadline = time.monotonic() + 40
             while snapshot(directory).get("status") != "Connected":
                 assert worker.poll() is None, "worker exited before interface became ready"
                 assert time.monotonic() < deadline, "interface startup timed out"
-                private_write(directory / "heartbeat", str(time.monotonic()).encode())
                 time.sleep(0.2)
             mapping = Path(f"/var/run/wireguard/xxm{os.getuid()}.name")
             assert mapping.exists(), "interface mapping missing"
-            if not orphan:
+            if orphan:
+                owner.terminate()
+                owner.wait(timeout=5)
+            else:
+                # No UI activity or heartbeat writes, longer than the old watchdog.
+                owner.send_signal(signal.SIGSTOP)
+                time.sleep(35)
+                assert worker.poll() is None and mapping.exists(), "frozen GUI stopped the tunnel"
+                owner.send_signal(signal.SIGCONT)
                 private_write(directory / "stop", b"stop")
-            assert worker.wait(timeout=35) == 0, "worker failed during shutdown"
+            code = worker.wait(timeout=55)
+            assert (code != 0 if orphan else code == 0), "incorrect shutdown exit code"
             state = snapshot(directory)
-            assert state.get("finished") and state.get("status") == "Idle", "final status missing"
+            assert state.get("finished") and state.get("status") == ("Failed" if orphan else "Idle"), "final status missing"
+            assert any(("界面进程已退出" if orphan else "界面断开请求") in line for line in state.get("lines", [])), "stop reason missing"
             assert not mapping.exists(), "WireGuard interface mapping remained after stop"
-            print("PASS:", "heartbeat loss cleanup" if orphan else "explicit stop cleanup")
+            print("PASS:", "owner exit cleanup" if orphan else "frozen GUI preserves session, explicit stop cleanup")
         finally:
             if worker.poll() is None:
                 private_write(directory / "stop", b"stop")
-                worker.wait(timeout=35)
+                worker.wait(timeout=55)
             worker.stderr.close()
+            if owner.poll() is None:
+                owner.kill()
+                owner.wait(timeout=5)
+            owner.stdin.close(); owner.stdout.close()
             thread.join(timeout=2)
 
 

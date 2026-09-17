@@ -19,8 +19,7 @@ enum AppError: LocalizedError {
     var errorDescription: String? { if case let .message(value) = self { return value }; return nil }
 }
 
-// Create private files before writing, then atomically publish. In particular,
-// heartbeat replacement must never expose a temporarily world-readable file.
+// Create private files before writing, then atomically publish.
 func privateWrite(_ data: Data, to url: URL) throws {
     let temporary = url.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
     let fd = Darwin.open(temporary.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
@@ -30,6 +29,17 @@ func privateWrite(_ data: Data, to url: URL) throws {
     try file.write(contentsOf: data)
     try file.close()
     guard Darwin.rename(temporary.path, url.path) == 0 else { throw AppError.message("无法保存配置文件") }
+}
+func acquireSessionLease(_ directory: URL) throws -> FileHandle {
+    let path = directory.appendingPathComponent("owner.lock").path
+    let fd = Darwin.open(path, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+    guard fd >= 0 else { throw AppError.message("无法创建界面进程存活锁") }
+    let file = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+    guard Darwin.flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+        try? file.close()
+        throw AppError.message("无法锁定界面会话")
+    }
+    return file
 }
 func shellQuote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 func appleScriptQuote(_ value: String) -> String {
@@ -54,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var process: Process?
     var session: URL?
     var timer: Timer?
+    var sessionLease: FileHandle?
     var stopping = false
     var restarting = false
     var closing = false
@@ -318,7 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
             do {
                 try privateWrite(JSONEncoder().encode(draft), to: directory.appendingPathComponent("request.json"))
-                try privateWrite(Data(UUID().uuidString.utf8), to: directory.appendingPathComponent("heartbeat"))
+                sessionLease = try acquireSessionLease(directory)
                 let command = "exec " + shellQuote(helper.path) + " macos-session " + shellQuote(directory.path) + " " + String(getuid())
                 let script = "do shell script " + appleScriptQuote(command) + " with administrator privileges"
                 let task = Process(); task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript"); task.arguments = ["-e", script]
@@ -331,13 +342,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 lastSequence = 0; clearAfter = 0; snapshotDate = nil
                 status.stringValue = "等待管理员授权／正在连接…"; updateControls()
                 try task.run()
-            } catch { process = nil; session = nil; try? FileManager.default.removeItem(at: directory); updateControls(); throw error }
+            } catch { releaseSessionLease(); process = nil; session = nil; try? FileManager.default.removeItem(at: directory); updateControls(); throw error }
         }
+    }
+    func releaseSessionLease() {
+        try? sessionLease?.close(); sessionLease = nil
     }
     @objc func poll() {
         guard let directory = session else { return }
-        do { try privateWrite(Data(UUID().uuidString.utf8), to: directory.appendingPathComponent("heartbeat")) }
-        catch { status.stringValue = "会话心跳失败，将自动断开" }
         readSnapshot(directory); updateControls()
     }
     func readSnapshot(_ directory: URL) {
@@ -364,10 +376,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func disconnect() { if !stopping { stop(restart: false) } }
     @objc func reconnect() { if !stopping { stop(restart: true) } }
     func ended(_ code: Int32, error: String) {
+        let expectedStop = stopping || closing
+        releaseSessionLease()
         if let directory = session { readSnapshot(directory); try? FileManager.default.removeItem(at: directory) }
         session = nil; process = nil; stopping = false
         if code != 0 { status.stringValue = "连接未完成或授权已取消"; log.string += "\n" + String(error.prefix(2048)) }
-        else { status.stringValue = "未连接" }
+        else if expectedStop { status.stringValue = "未连接" }
+        else { status.stringValue = "连接意外停止，请查看日志" }
+        if !expectedStop {
+            log.string += "\n隧道进程意外结束（退出码 \(code)），请查看上方停止原因后重新连接。"
+            status.stringValue = "连接意外停止，请查看日志"
+        }
         updateControls()
         if closing {
             if pendingUpdate != nil && code != 0 {
@@ -387,7 +406,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return .terminateNow
     }
     func applicationWillTerminate(_ notification: Notification) {
-        timer?.invalidate(); updater?.terminate()
+        timer?.invalidate(); releaseSessionLease(); updater?.terminate()
         if let item = statusItem { NSStatusBar.system.removeStatusItem(item) }
         if let package = pendingUpdate { NSWorkspace.shared.open(package) }
     }
@@ -416,6 +435,10 @@ struct XxtabApp {
                 delegate.openEditor(draft, index: nil, readOnly: true)
                 precondition(delegate.wgField.isEditable == false)
                 delegate.editor?.close()
+                // Owner lock must not be inherited by the elevated worker.
+                delegate.sessionLease = try acquireSessionLease(smokeRoot)
+                precondition(Darwin.fcntl(delegate.sessionLease!.fileDescriptor, F_GETFD) & FD_CLOEXEC != 0)
+                delegate.releaseSessionLease()
                 // Startup with no update or unavailable GitHub must not open a modal dialog.
                 delegate.updateEnded(0, data: Data(#"{"current":"0.1.3","available":false,"release":null}"#.utf8), error: "", downloading: false, automatic: true)
                 delegate.updateEnded(1, data: Data(), error: "synthetic offline error", downloading: false, automatic: true)

@@ -6,6 +6,7 @@ use crate::{
 use anyhow::{Context, Result, ensure};
 use serde_json::json;
 use std::{
+    cell::Cell,
     collections::VecDeque,
     ffi::CString,
     fs::{File, OpenOptions},
@@ -19,7 +20,7 @@ use std::{
     },
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 fn complete_dependencies(root: &Path) -> bool {
@@ -98,7 +99,7 @@ impl SessionDir {
         );
         Ok(Self { directory, uid })
     }
-    fn read(&self, name: &str) -> Result<Vec<u8>> {
+    fn open_input(&self, name: &str) -> Result<File> {
         let name = CString::new(name)?;
         let fd = unsafe {
             libc::openat(
@@ -118,6 +119,10 @@ impl SessionDir {
                 && meta.len() <= 512 * 1024,
             "invalid session input"
         );
+        Ok(file)
+    }
+    fn read(&self, name: &str) -> Result<Vec<u8>> {
+        let file = self.open_input(name)?;
         let mut data = Vec::new();
         file.take(512 * 1024 + 1).read_to_end(&mut data)?;
         ensure!(data.len() <= 512 * 1024, "session input too large");
@@ -143,6 +148,25 @@ impl SessionDir {
             "cannot assign snapshot owner"
         );
         Ok(file)
+    }
+}
+
+// The GUI holds an exclusive flock for its lifetime, with close-on-exec set.
+// A frozen/sleeping GUI keeps the lock; process exit releases it in the kernel.
+// Keeping this descriptor open also avoids PID reuse and path replacement races.
+fn owner_alive(file: &File) -> Result<bool> {
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } == 0 {
+        ensure!(
+            unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) } == 0,
+            "cannot release session owner probe"
+        );
+        return Ok(false);
+    }
+    let error = std::io::Error::last_os_error();
+    if error.kind() == std::io::ErrorKind::WouldBlock {
+        Ok(true)
+    } else {
+        Err(error).context("cannot check session owner lock")
     }
 }
 struct Snapshots {
@@ -220,10 +244,14 @@ async fn run_session(
         .context("WireGuard dependencies unavailable; reinstall the complete xxtab.app (source CLI: brew install bash wireguard-tools wireguard-go)")?;
     let draft: Draft = serde_json::from_slice(&directory.read("request.json")?)
         .map_err(|_| anyhow::anyhow!("invalid session request"))?;
-    let mut heartbeat = directory.read("heartbeat")?;
     if directory.stopped() {
+        crate::log!("会话停止：已收到界面断开请求");
         return Ok(());
     }
+    let owner = directory
+        .open_input("owner.lock")
+        .context("无法打开界面进程存活锁")?;
+    ensure!(owner_alive(&owner)?, "界面进程已退出，未启动隧道");
     // Root writes configurations only in its own fresh private directory. The
     // unprivileged request may supply settings, never an executable to elevate.
     let private = tempfile::Builder::new()
@@ -246,28 +274,33 @@ async fn run_session(
     let config_path = private.path().join("xxtab.toml");
     write_private(&config_path, toml::to_string(&config)?.as_bytes())?;
     write_private(&private.path().join("wg.conf"), draft.wireguard.as_bytes())?;
+    let stop_failure = Cell::new(None::<&'static str>);
     let stop = async {
-        let mut last_heartbeat = Instant::now();
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_millis(250)) => {},
-                _ = term.recv() => break,
-                signal = tokio::signal::ctrl_c() => { signal?; break; },
+                _ = term.recv() => { crate::log!("会话停止：收到 SIGTERM 信号"); break; },
+                signal = tokio::signal::ctrl_c() => { signal?; crate::log!("会话停止：收到 SIGINT 信号"); break; },
             }
             if directory.stopped() {
+                crate::log!("会话停止：已收到界面断开请求");
                 break;
             }
-            match directory.read("heartbeat") {
-                Ok(value) if value != heartbeat => {
-                    heartbeat = value;
-                    last_heartbeat = Instant::now();
+            match owner_alive(&owner) {
+                Ok(true) => {}
+                Ok(false) => {
+                    let reason = "界面进程已退出，正在断开并清理隧道";
+                    crate::log!("会话停止：{reason}");
+                    stop_failure.set(Some(reason));
+                    break;
                 }
-                Err(_) => break,
-                _ => {}
-            }
-            if last_heartbeat.elapsed() > Duration::from_secs(10) {
-                break;
+                Err(_) => {
+                    let reason = "无法检查界面进程存活锁，正在断开并清理隧道";
+                    crate::log!("会话停止：{reason}");
+                    stop_failure.set(Some(reason));
+                    break;
+                }
             }
         }
         Ok(())
@@ -278,7 +311,14 @@ async fn run_session(
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tokio::select! {
-            result = &mut run => return result,
+            result = &mut run => {
+                // Let app::run clean up normally before reporting lost ownership.
+                result?;
+                if let Some(reason) = stop_failure.get() {
+                    anyhow::bail!("{reason}");
+                }
+                return Ok(());
+            },
             _ = timer.tick() => { output.publish(feed, false)?; },
         }
     }
@@ -287,6 +327,34 @@ async fn run_session(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn owner_lock_needs_no_updates_and_releases_on_close() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(temp.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        let path = temp.path().join("owner.lock");
+        let gui = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+            .unwrap();
+        assert_eq!(
+            unsafe { libc::flock(gui.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+            0
+        );
+        let dir = SessionDir::open(temp.path(), unsafe { libc::getuid() }).unwrap();
+        let worker = dir.open_input("owner.lock").unwrap();
+        assert!(owner_alive(&worker).unwrap());
+        assert_eq!(worker.metadata().unwrap().len(), 0);
+        // Even path replacement cannot redirect the worker to a different owner.
+        std::fs::remove_file(&path).unwrap();
+        write_private(&path, b"").unwrap();
+        assert!(owner_alive(&worker).unwrap());
+        drop(gui);
+        assert!(!owner_alive(&worker).unwrap());
+    }
     #[test]
     fn resolves_relocated_app_dependencies_and_checks_execute_permissions() {
         use std::os::unix::fs::PermissionsExt;

@@ -35,7 +35,7 @@ func acquireSessionLease(_ directory: URL) throws -> FileHandle {
     let fd = Darwin.open(path, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
     guard fd >= 0 else { throw AppError.message("无法创建界面进程存活锁") }
     let file = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-    guard Darwin.flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+    guard xxtab_flock(fd, LOCK_EX | LOCK_NB) == 0 else {
         try? file.close()
         throw AppError.message("无法锁定界面会话")
     }
@@ -438,7 +438,13 @@ struct XxtabApp {
                 // Owner lock must not be inherited by the elevated worker.
                 delegate.sessionLease = try acquireSessionLease(smokeRoot)
                 precondition(Darwin.fcntl(delegate.sessionLease!.fileDescriptor, F_GETFD) & FD_CLOEXEC != 0)
+                let probe = try FileHandle(forReadingFrom: smokeRoot.appendingPathComponent("owner.lock"))
+                defer { try? probe.close() }
+                precondition(xxtab_flock(probe.fileDescriptor, LOCK_SH | LOCK_NB) == -1)
+                precondition(errno == EWOULDBLOCK)
                 delegate.releaseSessionLease()
+                precondition(xxtab_flock(probe.fileDescriptor, LOCK_SH | LOCK_NB) == 0)
+                precondition(xxtab_flock(probe.fileDescriptor, LOCK_UN) == 0)
                 // Startup with no update or unavailable GitHub must not open a modal dialog.
                 delegate.updateEnded(0, data: Data(#"{"current":"0.1.3","available":false,"release":null}"#.utf8), error: "", downloading: false, automatic: true)
                 delegate.updateEnded(1, data: Data(), error: "synthetic offline error", downloading: false, automatic: true)

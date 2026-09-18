@@ -124,7 +124,7 @@ jobs:
           go-version: '1.26.8'
           cache: false
       - name: Check AppKit Swift types
-        run: xcrun swiftc -typecheck -parse-as-library -swift-version 5 -target '${{ matrix.arch }}-apple-macosx13.0' -framework AppKit macos/Xxtab.swift
+        run: xcrun swiftc -typecheck -parse-as-library -swift-version 5 -target '${{ matrix.arch }}-apple-macosx13.0' -framework AppKit -import-objc-header macos/SessionLock.h macos/Xxtab.swift
       - name: Verify native architecture
         run: test "$(uname -m)" = '${{ matrix.arch }}'
       - run: cargo fmt --check

@@ -944,7 +944,17 @@ impl Ui {
                 PostMessageW(self.hwnd, WM_CLOSE, 0, 0);
             }
             ABOUT => {
-                MessageBoxW(self.hwnd,wide("xxtab 0.1.0\n\n系统 WireGuard + 内置 wstunnel 传输\nWindows 原生界面 · 无浏览器运行时\n\n“隧道已连接”表示外层连接和本地接口已就绪。\n实际 VPN 可达性仍取决于 WireGuard 服务端配置。").as_ptr(),wide("关于 xxtab").as_ptr(),MB_OK|MB_ICONINFORMATION);
+                MessageBoxW(
+                    self.hwnd,
+                    wide(concat!(
+                        "xxtab ",
+                        env!("CARGO_PKG_VERSION"),
+                        "\n\n系统 WireGuard + 内置 wstunnel 传输\nWindows 原生界面 · 无浏览器运行时\n\n“隧道已连接”表示外层连接和本地接口已就绪。\n实际 VPN 可达性仍取决于 WireGuard 服务端配置。"
+                    ))
+                    .as_ptr(),
+                    wide("关于 xxtab").as_ptr(),
+                    MB_OK | MB_ICONINFORMATION,
+                );
             }
             _ => {}
         }

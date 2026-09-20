@@ -7,7 +7,67 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     os::windows::ffi::OsStringExt,
 };
-use windows_sys::Win32::{Foundation::LocalFree, UI::Shell::CommandLineToArgvW};
+use windows_sys::Win32::{
+    Foundation::LocalFree,
+    Security::{
+        Authorization::ConvertSidToStringSidW, GetTokenInformation, TOKEN_QUERY, TOKEN_USER,
+        TokenUser,
+    },
+    System::Threading::{GetCurrentProcess, OpenProcessToken},
+    UI::Shell::CommandLineToArgvW,
+};
+
+pub(super) fn current_user_sid() -> Result<String> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    let query = || -> Result<String> {
+        // Read our process token directly; PowerShell's WindowsIdentity API is
+        // unavailable under ConstrainedLanguage. OwnedHandle closes on errors.
+        unsafe {
+            let mut raw_token = std::ptr::null_mut();
+            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw_token) == 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            let token = OwnedHandle::from_raw_handle(raw_token);
+            let mut size = 0;
+            GetTokenInformation(
+                token.as_raw_handle(),
+                TokenUser,
+                std::ptr::null_mut(),
+                0,
+                &mut size,
+            );
+            ensure!(
+                size as usize >= std::mem::size_of::<TOKEN_USER>(),
+                "invalid token information size"
+            );
+            // TOKEN_USER contains pointers, so the backing buffer must be aligned.
+            let mut buffer = vec![0usize; (size as usize).div_ceil(std::mem::size_of::<usize>())];
+            if GetTokenInformation(
+                token.as_raw_handle(),
+                TokenUser,
+                buffer.as_mut_ptr().cast(),
+                size,
+                &mut size,
+            ) == 0
+            {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            let user = &*buffer.as_ptr().cast::<TOKEN_USER>();
+            let mut text = std::ptr::null_mut();
+            if ConvertSidToStringSidW(user.User.Sid, &mut text) == 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            let mut len = 0;
+            while *text.add(len) != 0 {
+                len += 1;
+            }
+            let sid = String::from_utf16(std::slice::from_raw_parts(text, len));
+            LocalFree(text.cast());
+            Ok(sid?)
+        }
+    };
+    query().context("Windows 查询配置文件权限所需的用户身份失败")
+}
 
 #[derive(Deserialize, Serialize)]
 struct Session {
@@ -122,7 +182,7 @@ pub(super) fn recover(mut lock: &File, wg: &WireGuard) -> Result<()> {
     };
     let session = session.ok_or_else(conflict)?;
     // Names are validated as ASCII alphanumerics, '_' and '-' by Config.
-    let command = ps(&format!(
+    let command = ps("读取已有 WireGuard 服务启动信息", &format!(
         "(Get-CimInstance Win32_Service -Filter 'Name = \"WireGuardTunnel${}\"').PathName | ConvertTo-Json -Compress", wg.name
     )).context("无法读取已有 WireGuard 服务的启动信息，未进行自动清理")?;
     let command: String =
@@ -154,6 +214,19 @@ pub(super) fn recover(mut lock: &File, wg: &WireGuard) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_user_sid_matches_whoami() {
+        let sid = current_user_sid().unwrap();
+        assert!(sid.starts_with("S-1-"));
+        let result = output("whoami.exe", &args(&["/user", "/fo", "csv", "/nh"])).unwrap();
+        assert!(result.status.success());
+        assert!(
+            String::from_utf8_lossy(&result.stdout)
+                .split('"')
+                .any(|field| field == sid)
+        );
+    }
 
     #[test]
     fn distinguishes_query_failure_from_conflict() {

@@ -10,6 +10,10 @@
 
 程序不会随安装自动连接。安装完成后打开 xxtab，导入或新建配置，再点击连接。升级和卸载会检查安装目录的程序文件是否被占用，提示先断开连接并退出，不强制结束正在运行的客户端。
 
+连接时若 PowerShell 调用失败，新版会标出具体步骤（查询或添加服务器路由、查询 WireGuard 服务、清理路由等），并显示经过长度限制的系统错误文本。旧版仅显示 `powershell.exe failed with status exit code: 1`，不足以确定失败原因；NetTCPIP 命令可用、能查询路由，也不能证明添加路由有权限或 WireGuard 服务正常。此诊断只针对程序内置的系统查询和路由命令，WireGuard 配置及私钥不会输出。
+
+当前用户 SID 改用 Windows 原生令牌 API 获取。PowerShell 查询和错误输出不依赖受限语言模式禁止的 .NET 类型调用；结果通过自动清理的 UTF-8 临时文件读取，避免中文系统错误乱码。无需关闭 ConstrainedLanguage 或修改系统安全策略；系统仍需允许相关 cmdlet 和网络管理操作。
+
 用户配置位于 `%LOCALAPPDATA%\xxtab\profiles`，升级和卸载均保留，也不递归清空应用目录中的用户自建文件。精简安装包不会主动删除旧版遗留的文档或用户修改过的示例。若使用其他管理员账号授权运行，配置属于实际运行程序的账号。
 
 新版安装器仅在首次安装原本不存在的 WireGuard 后，在管理员保护的 `HKLM\Software\xxtab\Dependencies\WireGuard` 中记录官方 MSI 产品码和程序 SHA256，升级会保留该记录。卸载 xxtab 时，若产品码与程序哈希仍匹配，且没有 WireGuard 隧道服务或官方客户端中保存的独立配置，则调用官方 MSI 一并卸载依赖；需要重启时会提示。原先已有、来源不明或后来更换的 WireGuard 保留。卸载失败时显示错误码，日志位于执行卸载账号的 `%LOCALAPPDATA%\xxtab\wireguard-uninstall.log`。

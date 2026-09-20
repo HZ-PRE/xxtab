@@ -58,17 +58,63 @@ fn args(a: &[&str]) -> Vec<String> {
     a.iter().map(|s| (*s).into()).collect()
 }
 #[cfg(windows)]
-fn ps(script: &str) -> Result<String> {
-    run(
+fn ps(operation: &str, script: &str) -> Result<String> {
+    ps_with_prelude(operation, script, "")
+}
+
+#[cfg(windows)]
+fn ps_with_prelude(operation: &str, script: &str, prelude: &str) -> Result<String> {
+    use std::io::Read;
+    // Only internal system scripts use this helper; they contain no WG keys or
+    // authenticated paths. Keep the generic wg-quick runner's stderr redacted.
+    // Cmdlet UTF-8 output works in ConstrainedLanguage without .NET calls or
+    // console-codepage assumptions. The random temporary file is removed on drop.
+    let result_file = tempfile::Builder::new()
+        .prefix("xxtab-query-")
+        .tempfile()?
+        .into_temp_path();
+    let result_path = result_file.to_string_lossy().replace('\'', "''");
+    let script = format!(
+        "{prelude} $ErrorActionPreference='Stop'; try {{ \
+         $result = & {{ {script} }} | Out-String -Width 4096; \
+         Set-Content -LiteralPath '{result_path}' -Value $result -Encoding UTF8; \
+         }} catch {{ $message = [string]$_.Exception.Message; \
+         if ($message.Length -gt 768) {{ $message = $message.Substring(0, 768) }}; \
+         Set-Content -LiteralPath '{result_path}' -Value $message -Encoding UTF8; exit 1 }}"
+    );
+    let result = output(
         "powershell.exe",
         &args(&[
             "-NoLogo",
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            &format!("$ErrorActionPreference='Stop'; {script}"),
+            &script,
         ]),
     )
+    .with_context(|| format!("Windows {operation}失败"))?;
+    let mut bytes = Vec::new();
+    std::fs::File::open(&result_file)?
+        .take(65537)
+        .read_to_end(&mut bytes)?;
+    ensure!(bytes.len() <= 65536, "Windows {operation}返回内容过长");
+    let content = std::str::from_utf8(&bytes)
+        .with_context(|| format!("Windows {operation}返回内容不是 UTF-8"))?
+        .trim_start_matches('\u{feff}')
+        .trim();
+    if !result.status.success() {
+        let detail: String = content.chars().take(1024).collect();
+        bail!(
+            "Windows {operation}失败（{}）：{}",
+            result.status,
+            if detail.is_empty() {
+                "PowerShell 未提供详细原因，请检查管理员权限、系统网络服务及脚本执行策略"
+            } else {
+                &detail
+            }
+        );
+    }
+    Ok(content.into())
 }
 
 pub struct Route {
@@ -81,24 +127,33 @@ impl Route {
         }
         #[cfg(windows)]
         {
-            let found = ps(&format!(
-                "$r = Get-NetRoute -AddressFamily IPv4 -PolicyStore ActiveStore | Where-Object {{ $_.DestinationPrefix -eq '{ip}/32' }}; if ($r) {{ 'exists' }}"
-            ))?;
+            let found = ps(
+                "查询服务器已有路由",
+                &format!(
+                    "$r = Get-NetRoute -AddressFamily IPv4 -PolicyStore ActiveStore | Where-Object {{ $_.DestinationPrefix -eq '{ip}/32' }}; if ($r) {{ 'exists' }}"
+                ),
+            )?;
             if found == "exists" {
                 return Ok(None);
             }
-            let data = ps(&format!(
-                "Find-NetRoute -RemoteIPAddress '{ip}' | Where-Object {{ $null -ne $_.NextHop }} | Select-Object -First 1 InterfaceIndex,NextHop | ConvertTo-Json -Compress"
-            ))?;
+            let data = ps(
+                "查找服务器出口网关",
+                &format!(
+                    "Find-NetRoute -RemoteIPAddress '{ip}' | Where-Object {{ $null -ne $_.NextHop }} | Select-Object -First 1 InterfaceIndex,NextHop | ConvertTo-Json -Compress"
+                ),
+            )?;
             let v: serde_json::Value =
                 serde_json::from_str(&data).context("cannot find physical route to server")?;
             let index = v["InterfaceIndex"]
                 .as_u64()
                 .context("missing route interface")?;
             let hop: Ipv4Addr = v["NextHop"].as_str().context("missing gateway")?.parse()?;
-            ps(&format!(
-                "New-NetRoute -DestinationPrefix '{ip}/32' -InterfaceIndex {index} -NextHop '{hop}' -RouteMetric 1 -PolicyStore ActiveStore | Out-Null"
-            ))?;
+            ps(
+                "添加服务器绕行路由",
+                &format!(
+                    "New-NetRoute -DestinationPrefix '{ip}/32' -InterfaceIndex {index} -NextHop '{hop}' -RouteMetric 1 -PolicyStore ActiveStore | Out-Null"
+                ),
+            )?;
             Ok(Some(Self {
                 delete: vec![format!(
                     "Get-NetRoute -DestinationPrefix '{ip}/32' -InterfaceIndex {index} -NextHop '{hop}' -PolicyStore ActiveStore | Remove-NetRoute -Confirm:$false"
@@ -160,7 +215,7 @@ impl Route {
     fn remove(&self) -> Result<()> {
         #[cfg(windows)]
         {
-            ps(&self.delete[0])?;
+            ps("清理服务器绕行路由", &self.delete[0])?;
         }
         #[cfg(target_os = "linux")]
         {
@@ -226,7 +281,7 @@ impl Managed {
         }
         #[cfg(windows)]
         {
-            let sid = ps("[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value")?;
+            let sid = windows::current_user_sid()?;
             ensure!(
                 sid.starts_with("S-1-")
                     && sid
@@ -285,10 +340,13 @@ impl Managed {
             )?;
             let deadline = Instant::now() + Duration::from_secs(15);
             loop {
-                let state = ps(&format!(
-                    "(Get-Service -Name 'WireGuardTunnel${}').Status.ToString()",
-                    self.name
-                ))?;
+                let state = ps(
+                    "查询 WireGuard 隧道服务状态",
+                    &format!(
+                        "[string](Get-Service -Name 'WireGuardTunnel${}').Status",
+                        self.name
+                    ),
+                )?;
                 if state == "Running" {
                     break;
                 }
@@ -391,6 +449,58 @@ fn default_executable() -> PathBuf {
 mod tests {
     use super::*;
     use base64::{Engine, engine::general_purpose::STANDARD};
+
+    #[test]
+    #[cfg(windows)]
+    fn powershell_errors_identify_operation_and_preserve_bounded_unicode() {
+        for prelude in [
+            "",
+            "$ExecutionContext.SessionState.LanguageMode='ConstrainedLanguage';",
+        ] {
+            let error = ps_with_prelude(
+                "测试路由查询",
+                "throw ('模拟拒绝访问' + ('长' * 5000))",
+                prelude,
+            )
+            .unwrap_err()
+            .to_string();
+            assert!(error.contains("Windows 测试路由查询失败"));
+            assert!(error.contains("模拟拒绝访问"), "{error}");
+            assert!(!error.contains('\u{fffd}'));
+            assert!(error.chars().count() < 1100);
+            assert!(!error.contains("Exception.Message"));
+            assert_eq!(
+                ps_with_prelude("测试查询成功", "'正常输出'", prelude).unwrap(),
+                "正常输出"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn powershell_service_queries_work_in_constrained_language() {
+        let prelude = "$ExecutionContext.SessionState.LanguageMode='ConstrainedLanguage';";
+        assert_eq!(
+            ps_with_prelude(
+                "测试语言模式",
+                "$ExecutionContext.SessionState.LanguageMode",
+                prelude
+            )
+            .unwrap(),
+            "ConstrainedLanguage"
+        );
+        assert_eq!(
+            ps_with_prelude(
+                "测试服务状态",
+                "[string](Get-Service -Name 'EventLog').Status",
+                prelude
+            )
+            .unwrap(),
+            "Running"
+        );
+        let path = ps_with_prelude("测试服务启动信息", "(Get-CimInstance Win32_Service -Filter 'Name = \"EventLog\"').PathName | ConvertTo-Json -Compress", prelude).unwrap();
+        assert!(!serde_json::from_str::<String>(&path).unwrap().is_empty());
+    }
 
     #[test]
     #[cfg(windows)]

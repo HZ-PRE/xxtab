@@ -1,9 +1,9 @@
 [package]
 name = "xxtab"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2024"
 rust-version = "1.89"
-description = "Small system WireGuard manager with embedded wstunnel WebSocket transport"
+description = "Small system wg manager with embedded wstunnel WebSocket transport"
 license = "MIT"
 
 [dependencies]

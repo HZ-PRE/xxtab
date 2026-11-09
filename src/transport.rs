@@ -21,8 +21,13 @@ use tokio::{
 };
 
 pub const MAX_PACKET: usize = 2048;
-const QUEUE: usize = 32;
-const BATCH: usize = 16;
+const INTERACTIVE_QUEUE: usize = 32;
+const BALANCED_QUEUE: usize = 64;
+const INITIAL_BUFFERS: usize = 4;
+const YIELD_BATCH: usize = 16;
+const INTERACTIVE_WRITE_BATCH: usize = 8;
+const BALANCED_WRITE_BATCH: usize = 32;
+const WRITE_BUFFER: usize = 32 * 1024;
 const MAX_QUEUE_AGE: Duration = Duration::from_millis(100);
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 type Ws = WebSocket<TokioIo<hyper::upgrade::Upgraded>>;
@@ -53,20 +58,29 @@ struct PacketQueue {
     pending: RefCell<VecDeque<Packet>>,
     free: RefCell<Vec<Vec<u8>>>,
     ready: Notify,
+    capacity: usize,
     interactive: bool,
     small_streak: Cell<usize>,
 }
 
 impl PacketQueue {
     fn new(interactive: bool) -> Self {
+        let capacity = if interactive {
+            INTERACTIVE_QUEUE
+        } else {
+            BALANCED_QUEUE
+        };
         Self {
-            pending: RefCell::new(VecDeque::with_capacity(QUEUE)),
+            pending: RefCell::new(VecDeque::with_capacity(capacity)),
             free: RefCell::new(
-                (0..=QUEUE)
+                // Keep idle memory small. The remaining bounded packet storage
+                // is acquired only when a burst actually arrives, then reused.
+                (0..INITIAL_BUFFERS)
                     .map(|_| Vec::with_capacity(MAX_PACKET))
                     .collect(),
             ),
             ready: Notify::new(),
+            capacity,
             interactive,
             small_streak: Cell::new(0),
         }
@@ -76,7 +90,7 @@ impl PacketQueue {
     // to admit a small packet. The caller counts one congestion drop either way.
     fn push(&self, bytes: &[u8]) -> bool {
         let mut pending = self.pending.borrow_mut();
-        let dropped = pending.len() == QUEUE;
+        let dropped = pending.len() == self.capacity;
         let recycled = if dropped {
             if !self.interactive || bytes.len() > 256 {
                 return false;
@@ -143,6 +157,14 @@ impl PacketQueue {
             stats.dropped.fetch_add(1, Relaxed);
         }
     }
+
+    fn write_batch_limit(&self) -> usize {
+        if self.interactive {
+            INTERACTIVE_WRITE_BATCH
+        } else {
+            BALANCED_WRITE_BATCH
+        }
+    }
 }
 
 async fn write_batch<W: AsyncWrite + Unpin>(
@@ -154,7 +176,7 @@ async fn write_batch<W: AsyncWrite + Unpin>(
     let started = Instant::now();
     let mut next = Some(first);
     let mut bytes = 0;
-    for index in 0..BATCH {
+    for index in 0..packets.write_batch_limit() {
         if index != 0 {
             next = packets.pop();
         }
@@ -322,7 +344,7 @@ async fn session(
 ) -> Result<()> {
     let (mut reader, mut writer) = ws.split(|stream| {
         let (read, write) = tokio::io::split(stream);
-        (read, BufWriter::with_capacity(16 * 1024, write))
+        (read, BufWriter::with_capacity(WRITE_BUFFER, write))
     });
     let (ctrl_tx, mut ctrl_rx) = mpsc::channel::<Vec<u8>>(4);
     let last_rx = Cell::new(Instant::now());
@@ -359,7 +381,7 @@ async fn session(
                 _ => bail!("unexpected non-binary tunnel data"),
             }
             processed += 1;
-            if processed == BATCH {
+            if processed == YIELD_BATCH {
                 processed = 0;
                 tokio::task::yield_now().await;
             }
@@ -431,7 +453,7 @@ pub async fn run(
         loop {
             // Tokio's normal IO budget exceeds this queue's capacity. Yield
             // earlier so a readable socket cannot fill it before TX gets polled.
-            if processed == BATCH {
+            if processed == YIELD_BATCH {
                 processed = 0;
                 tokio::task::yield_now().await;
             }
@@ -587,7 +609,9 @@ mod tests {
     #[test]
     fn interactive_priority_is_bounded_and_preserves_bulk_progress() {
         let queue = PacketQueue::new(true);
-        for index in 0..QUEUE {
+        assert_eq!(queue.free.borrow().len(), INITIAL_BUFFERS);
+        assert_eq!(queue.write_batch_limit(), INTERACTIVE_WRITE_BATCH);
+        for index in 0..queue.capacity {
             assert!(queue.push(&vec![index as u8; 1024]));
         }
         // Small control traffic can enter a full queue by replacing one bulk packet.
@@ -615,7 +639,7 @@ mod tests {
         );
         queue.recycle(packet);
         queue.discard(&Stats::default());
-        assert_eq!(queue.free.borrow().len(), QUEUE + 1);
+        assert_eq!(queue.free.borrow().len(), queue.capacity);
     }
 
     #[test]
@@ -638,31 +662,37 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn queue_is_bounded_reuses_storage_and_survives_cancelled_wait() {
         let queue = PacketQueue::new(false);
-        let original: std::collections::HashSet<_> =
-            queue.free.borrow().iter().map(|v| v.as_ptr()).collect();
+        assert_eq!(queue.free.borrow().len(), INITIAL_BUFFERS);
+        assert_eq!(queue.write_batch_limit(), BALANCED_WRITE_BATCH);
+        let mut original = std::collections::HashSet::new();
         assert!(
             timeout(Duration::from_millis(1), queue.recv())
                 .await
                 .is_err()
         );
         for cycle in 0..100 {
-            for index in 0..QUEUE {
+            for index in 0..queue.capacity {
                 assert!(queue.push(&[cycle, index as u8]));
             }
             assert!(!queue.push(b"overflow"));
-            for index in 0..QUEUE {
+            for index in 0..queue.capacity {
                 let packet = queue.recv().await;
                 assert_eq!(packet.data, [cycle, index as u8]);
-                assert!(original.contains(&packet.data.as_ptr()));
+                if cycle == 0 {
+                    original.insert(packet.data.as_ptr());
+                } else {
+                    assert!(original.contains(&packet.data.as_ptr()));
+                }
                 queue.recycle(packet);
             }
         }
+        assert_eq!(original.len(), queue.capacity);
         assert!(queue.push(b"offline backlog"));
         let stats = Stats::default();
         queue.discard(&stats);
         assert!(queue.pop().is_none());
         assert_eq!(stats.dropped.load(Relaxed), 1);
-        assert_eq!(queue.free.borrow().len(), QUEUE + 1);
+        assert_eq!(queue.free.borrow().len(), queue.capacity);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -673,13 +703,13 @@ mod tests {
         ws.set_auto_apply_mask(false);
         let (_, mut writer) = ws.split(|io| {
             let (r, w) = tokio::io::split(io);
-            (r, BufWriter::with_capacity(16 * 1024, w))
+            (r, BufWriter::with_capacity(WRITE_BUFFER, w))
         });
         let mut reader = WebSocket::after_handshake(server, Role::Server);
         reader.set_auto_apply_mask(false);
         let queue = PacketQueue::new(false);
         let stats = Stats::default();
-        for index in 0..QUEUE {
+        for index in 0..queue.capacity {
             assert!(queue.push(&vec![index as u8; 1280]));
         }
         queue.pending.borrow_mut()[0].received =
@@ -687,8 +717,9 @@ mod tests {
         write_batch(&mut writer, queue.recv().await, &queue, &stats)
             .await
             .unwrap();
-        assert_eq!(queue.pending.borrow().len(), QUEUE - BATCH);
-        for index in 1..BATCH {
+        let batch = queue.write_batch_limit();
+        assert_eq!(queue.pending.borrow().len(), queue.capacity - batch);
+        for index in 1..batch {
             let frame = timeout(Duration::from_secs(1), reader.read_frame())
                 .await
                 .unwrap()
@@ -708,7 +739,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(&*frame.payload, b"interactive");
-        assert_eq!(queue.free.borrow().len(), QUEUE + 1);
+        assert_eq!(queue.free.borrow().len(), queue.capacity);
     }
 
     #[test]

@@ -1,22 +1,22 @@
 # xxtab
 
-轻量 Rust 客户端，将 **系统 WireGuard + 内置 wstunnel WebSocket 传输**统一管理，支持 Windows / Linux / macOS。
+轻量 Rust 客户端，将 **WireGuard 系统隧道 + 内置 wstunnel WebSocket 传输**统一管理，支持 Windows / Linux / macOS。
 
 ```text
-应用流量 → 系统 WireGuard → 127.0.0.1:51820/UDP
+应用流量 → xxtab 管理的 WireGuard 隧道 → 127.0.0.1:51820/UDP
                            ↓ xxtab 内置 WS/WSS
                      官方 wstunnel server
                            ↓ UDP
                        WireGuard 服务端
 ```
 
-WireGuard 加密由专用 WireGuard 实现执行；xxtab 不解密 VPN 报文。客户端不用另起 wstunnel-cli 进程，也不包含浏览器或连接池。Windows 提供独立的轻量原生界面 `xxtab-gui.exe`，界面与转发核心在同一个进程内运行，使用系统 WireGuard；macOS App 内置 wireguard-go、wg、wg-quick 和 Bash，用户无需安装 Homebrew。当前兼容性基线为官方 **wstunnel v10.7.1 的默认 WebSocket 模式**。
+WireGuard 加密由官方专用实现执行；xxtab 不解密 VPN 报文。客户端不用另起 wstunnel-cli 进程，也不包含浏览器或连接池。Windows 安装版私有携带 WireGuard 运行时，界面与转发核心在同一个进程内运行；macOS App 内置 wireguard-go、wg、wg-quick 和 Bash，用户无需安装 Homebrew。当前兼容性基线为官方 **wstunnel v10.7.1 的默认 WebSocket 模式**。
 
 ## Windows 可视化界面
 
 Windows 安装包位于 `dist/installers/xxtab-版本-windows-x64-setup.exe`，支持 Windows 10 1809+ / Windows 11 x64。中文向导会安装界面和命令行程序、创建快捷方式；本机缺少 WireGuard 时从包内安装官方版本，已有版本保留。卸载保留用户配置；由新版 xxtab 首次安装且未更换、无其他隧道服务或独立配置的 WireGuard 会一并卸载，其他来源的 WireGuard 保留。安装包中的程序静态链接 C 运行库，无需另装 Visual C++ 运行库。打包及验证方法见 [Windows 安装包说明](docs/windows-installer.md)。
 
-直接双击 `dist/windows-x64/xxtab-gui.exe`。系统会要求管理员权限，用于启停 WireGuard 和维护路由；不需要额外运行命令行客户端。
+直接双击 `dist/windows-x64/xxtab-gui.exe`。系统会要求管理员权限，用于启停 WireGuard 和维护路由；不需要额外运行命令行客户端。Windows 安装版包含私有的官方 WireGuard 运行时，不安装或启动独立的 WireGuard 桌面客户端。
 
 ![Windows 主界面（程序内测试配置）](docs/windows-gui.png)
 
@@ -82,14 +82,14 @@ mtu = 1280
 
 ### 3. 启动
 
-Windows：先安装官方 [WireGuard for Windows](https://www.wireguard.com/install/)，在管理员 PowerShell 中执行：
+Windows 安装版已包含私有的官方 WireGuard 运行时；便携版需要自行提供官方 [WireGuard for Windows](https://www.wireguard.com/install/) 或在 `wireguard.executable` 指定运行时。在管理员 PowerShell 中执行：
 
 ```powershell
 .\xxtab.exe check .\xxtab.toml
 .\xxtab.exe run .\xxtab.toml
 ```
 
-默认调用 `C:\Program Files\WireGuard\wireguard.exe`，非标准路径可配置 `wireguard.executable`。不必预先在 WireGuard GUI 中导入或启动同一份配置。
+安装版默认调用 `xxtab\runtime\wd.exe`；便携版会回退到 `C:\Program Files\WireGuard\wireguard.exe`。非标准路径可配置 `wireguard.executable`。不必预先在 WireGuard GUI 中导入或启动同一份配置。
 
 Linux：需要内核 WireGuard、`wireguard-tools`、`iproute2`、Bash；配置 DNS 时还需与 `wg-quick` 兼容的 `resolvconf`。
 

@@ -135,7 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return stack
     }
     func buildUI() {
-        window.title = "xxtab — WireGuard 隧道客户端"; window.minSize = NSSize(width: 640, height: 440)
+        window.title = "xxtab — wg 隧道客户端"; window.minSize = NSSize(width: 640, height: 440)
         window.delegate = self; window.isReleasedWhenClosed = false; window.center()
         profiles.target = self; profiles.action = #selector(selectProfile)
         connectButton = button("连接", #selector(connect)); disconnectButton = button("断开", #selector(disconnect)); reconnectButton = button("重新连接", #selector(reconnect))

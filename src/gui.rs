@@ -1455,7 +1455,7 @@ unsafe fn create_main(store: Store, feed: Arc<Mutex<Feed>>) -> Result<HWND> {
     let hwnd = CreateWindowExW(
         WS_EX_CONTROLPARENT,
         wide("XxtabMain").as_ptr(),
-        wide("xxtab — WireGuard 隧道客户端").as_ptr(),
+        wide("xxtab — wg 隧道客户端").as_ptr(),
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT,
         CW_USEDEFAULT,

@@ -337,6 +337,17 @@ impl Drop for Managed {
 fn default_executable() -> PathBuf {
     #[cfg(windows)]
     {
+        // The Windows installer ships the signed official WireGuard runtime
+        // privately with xxtab. It provides the WireGuardNT driver and tunnel
+        // service without installing the separate WireGuard desktop client.
+        if let Ok(current) = std::env::current_exe()
+            && let Some(directory) = current.parent()
+        {
+            let bundled = directory.join("runtime").join("wd.exe");
+            if bundled.is_file() {
+                return bundled;
+            }
+        }
         Path::new(&std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into()))
             .join("WireGuard/wireguard.exe")
     }
@@ -440,7 +451,7 @@ mod tests {
         let wg = WireGuard {
             config: PathBuf::new(),
             name: "xxtabtest".into(),
-            executable: None,
+            executable: std::env::var_os("XXTAB_TEST_WIREGUARD_EXE").map(PathBuf::from),
             mtu: 1280,
         };
         let mut managed = Managed::prepare(&wg, &prepared).unwrap();

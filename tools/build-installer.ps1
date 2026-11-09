@@ -34,6 +34,27 @@ $signature = Get-AuthenticodeSignature -LiteralPath $msi
 if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=WireGuard LLC') {
     throw 'WireGuard MSI must have a valid signature from WireGuard LLC.'
 }
+$runtimeRoot = Join-Path $toolDir 'wireguard-runtime'
+$runtime = Join-Path $runtimeRoot 'wd.exe'
+if (-not (Test-Path -LiteralPath $runtime)) {
+    $extractRoot = Join-Path $toolDir 'wireguard-runtime-extract'
+    New-Item -ItemType Directory -Force $runtimeRoot, $extractRoot | Out-Null
+    # Administrative extraction only unpacks the signed MSI into .tools; it
+    # neither registers WireGuard nor starts its desktop client.
+    $extractArgs = "/a `"$msi`" /qn TARGETDIR=`"$extractRoot`""
+    $extractProcess = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\msiexec.exe') -ArgumentList $extractArgs -Wait -PassThru -WindowStyle Hidden
+    if ($extractProcess.ExitCode -ne 0) { throw "Cannot extract WireGuard runtime from MSI (exit code $($extractProcess.ExitCode))." }
+    $extractedRuntime = Join-Path $extractRoot 'WireGuard\wireguard.exe'
+    if (-not (Test-Path -LiteralPath $extractedRuntime)) { throw 'WireGuard MSI did not contain wireguard.exe.' }
+    Copy-Item -LiteralPath $extractedRuntime -Destination $runtime
+}
+$runtimeSignature = Get-AuthenticodeSignature -LiteralPath $runtime
+if ($runtimeSignature.Status -ne 'Valid' -or $runtimeSignature.SignerCertificate.Subject -notmatch 'O=WireGuard LLC') {
+    throw 'Extracted WireGuard runtime must have a valid signature from WireGuard LLC.'
+}
+if ((Get-FileHash -LiteralPath $runtime -Algorithm SHA256).Hash -ne '32717D15B57965ADF78B33F61DB32CB26E11759DD78D441A218DD349C731A160') {
+    throw 'Extracted WireGuard runtime SHA256 mismatch. The MSI contents may not be the expected 0.5.3 release.'
+}
 Push-Location $repoRoot
 try {
     if (-not $SkipBuild) {

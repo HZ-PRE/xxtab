@@ -194,3 +194,8 @@ cargo test system::tests -- --ignored --nocapture --test-threads=1
 
 win运行命令：cargo run --release --features windows-gui --bin xxtab-gui
 win打包命令  .\tools\build-installer.ps1
+
+git tag -d v0.1.7
+git push origin --delete v0.1.6 
+git tag v0.1.7
+git push origin v0.1.6 
